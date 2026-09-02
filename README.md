@@ -63,6 +63,7 @@ Doing something like this you could get Claude to compile software on the DOS ma
 * Better Claude .MD files to help new Claude sessions pick up the project and how it works.
 * Add more cross compilers presetup/defined/ready? Open Watcom V2?
 * Add more DOS compilers presetup/defined/ready? Turbo Pascal? Microsoft C? Borland C? Watcom C/C++?
+* Ability to turn a smart plug off and back on for when a hard lock happens. Ones that support simple HTTP interfaces such as the Shelly Smart Plug @ https://www.amazon.com/dp/B0G2YY8TCJ?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1 
 
 ## Videos and Details
 All these were created with simple prompts. Claude and FPC compiled and deployed tested and ran via DOS Bridge.
