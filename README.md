@@ -63,3 +63,25 @@ Doing something like this you could get Claude to compile software on the DOS ma
 * Better Claude .MD files to help new Claude sessions pick up the project and how it works.
 * Add more cross compilers presetup/defined/ready? Open Watcom V2?
 * Add more DOS compilers presetup/defined/ready? Turbo Pascal? Microsoft C? Borland C? Watcom C/C++?
+
+## Videos and Details
+All these were created with simple prompts. Claude and FPC compiled and deployed tested and ran via DOS Bridge.
+Claude would keep running and testing until it was happy.
+
+All the Tools that were generated to make this all work and happen were all built with Claude and DOS Bridge once it worked.
+Each new tool needed was created and tested and used for some action and is included then.
+
+### Video 1
+[![Watch Video](https://img.youtube.com/vi/s59O3P47iLc/hqdefault.jpg)](https://www.youtube.com/watch?v=s59O3P47iLc)
+
+### Video 2
+[![Watch Video](https://img.youtube.com/vi/G4G8IgyH30A/hqdefault.jpg)](https://www.youtube.com/watch?v=G4G8IgyH30A)
+
+### Video 3
+[![Watch Video](https://img.youtube.com/vi/LL4DhkVjp_s/hqdefault.jpg)](https://www.youtube.com/watch?v=LL4DhkVjp_s)
+
+### Video 4
+[![Watch Video](https://img.youtube.com/vi/8zCfU7UTB9g/hqdefault.jpg)](https://www.youtube.com/watch?v=8zCfU7UTB9g)
+
+### Video 5
+[![Watch Video](https://img.youtube.com/vi/PEu3jnpDtfI/hqdefault.jpg)](https://www.youtube.com/watch?v=PEu3jnpDtfI)
