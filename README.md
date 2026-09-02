@@ -55,6 +55,7 @@ Doing something like this you could get Claude to compile software on the DOS ma
 ## Future Changes
 
 * Remove mTCP dependency
+* Removing mTCP and moving to UDP cases.
 * Better documentation
 * Install / Setup Video
 * More Tools
