@@ -45,12 +45,12 @@ overwrite something that took effort to get right.
 
 ## Compiler Options
 
-FreePascal was used because it does A great job of doing DOS software and is still maintained.
-So most of the .MD files here will point Claude to use FPC locally on the Windows machine.
-This helps compile local on the Server to speed things up.
-BUT you can tell Claude to use A compiler on the DOS machine itself.
-Prompt such as **Lets created a project on the DOS machine in C:\NewGame and use the Borland Pascal 7 compiler located in C:\BP\BIN**
-Doing something like this you could get Claude to compile software on the DOS machine.
+FreePascal was used because it does A great job of doing DOS software and is still maintained.  
+So most of the .MD files here will point Claude to use FPC locally on the Windows machine.  
+This helps compile local on the Server to speed things up.  
+BUT you can tell Claude to use A compiler on the DOS machine itself.  
+Prompt such as **Lets created a project on the DOS machine in C:\NewGame and use the Borland Pascal 7 compiler located in C:\BP\BIN**  
+Doing something like this you could get Claude to compile software on the DOS machine.  
 
 ## Future Changes
 
