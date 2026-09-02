@@ -1,0 +1,45 @@
+DOS Bridge  build 17  (2026-09-01)
+
+dosbridge - Windows side
+========================
+
+FIRST: copy this whole folder somewhere permanent, for example C:\dosbridge,
+and open a command prompt INSIDE it. Every step below is run from there --
+the scripts locate everything relative to themselves, so running them from
+the folder above finds nothing.
+
+    cd C:\dosbridge
+
+  1. install.cmd      adds this folder to PATH and opens the firewall
+                      (needs an administrator prompt)
+
+  2. check.cmd        verifies Python, Free Pascal, PATH and the firewall
+
+  3. dosd.cmd         start the daemon and LEAVE IT RUNNING in its own window
+
+  4. python selftest.py
+                      run this from THIS folder, in a second prompt. It
+                      exercises the whole loop against a simulated DOS box,
+                      so you can confirm the Windows half works before any
+                      hardware is involved. Expect "ALL TESTS PASSED".
+
+Note on step 3: a "client went away mid-request" line in the dosd window is
+normal. The DOS box closes its long-poll connection routinely and that is not
+an error.
+
+Free Pascal is a separate download and is not bundled here. You need BOTH,
+in this order:
+
+    fpc-3.2.2.i386-win32.exe                     the native 32-bit compiler
+    fpc-3.2.2.i386-win32.cross.i8086-msdos.exe   the 16-bit cross compiler
+
+The i386/win32 native compiler is the prerequisite for the cross package, not
+the Win64 one. Installing the x86_64 build first leaves you with an fpc that
+does not understand -Tmsdos.
+
+The DOS machine's half is the client\ folder next to this one. Carry it over
+by floppy, USB or disk image -- you cannot use the bridge to install the
+bridge.
+
+Your own work does NOT go in starter\, which is reserved for the bridge's own
+tools and examples. Run `dosnew NAME` to scaffold projects\NAME\ instead.

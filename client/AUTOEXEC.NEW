@@ -1,0 +1,45 @@
+@ECHO OFF
+REM ===================================================================
+REM  Suggested AUTOEXEC.BAT for a dosbridge client.
+REM
+REM  This is a SUGGESTION, not a drop-in replacement. Merge the parts
+REM  you need into your own AUTOEXEC.BAT. Keep a backup first:
+REM      COPY C:\AUTOEXEC.BAT C:\AUTOEXEC.SAV
+REM ===================================================================
+
+REM C:\TOOLS must be on PATH or the tools will not resolve by name.
+PATH=C:\AI;C:\AGENT;C:\TOOLS;C:\WORK;C:\DOS;C:\MTCP
+
+SET MTCPCFG=C:\MTCP\MTCP.CFG
+PROMPT $P$G
+
+REM --- network, before anything that can wedge the machine ------------
+REM This ordering is load-bearing. The crash guard in AI.BAT can only
+REM phone home about a driver that killed the previous boot if the
+REM network is already up when it runs.
+REM
+REM Use whichever packet driver matches your card, and match the
+REM IRQ/port to its jumpers or its own config:
+REM
+REM   PicoMEM :  C:\DRIVERS\PM2000.COM 0x60
+REM   NE2000  :  NE2000.COM 0x60 3 0x300
+REM
+NE2000.COM 0x60 3 0x300
+
+REM --- DO NOT RUN DHCP -----------------------------------------------
+REM DHCP.EXE is one-shot. It stamps IPADDR, TIMESTAMP and LEASE_TIME
+REM into MTCP.CFG and exits, and nothing renews the lease. When it
+REM expires every mTCP tool refuses to run and the box goes silent --
+REM and it cannot recover on its own, because the :OFFLINE branch in
+REM AI.BAT retries HTGET forever but never re-runs DHCP. That costs you
+REM a walk to the machine.
+REM
+REM Set a static IPADDR/NETMASK/GATEWAY in MTCP.CFG instead. It also
+REM saves several seconds on every boot, which adds up on a machine
+REM that reboots as often as this one does.
+REM
+REM DHCP
+
+REM --- hand off to the agent loop -------------------------------------
+CD \AI
+CALL AI.BAT

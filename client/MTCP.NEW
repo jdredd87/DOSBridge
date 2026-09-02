@@ -1,0 +1,16 @@
+# mTCP config for a dosbridge client. STATIC on purpose.
+#
+# Do not run DHCP.EXE against this file. It is one-shot: it stamps
+# TIMESTAMP and LEASE_TIME in here and exits, nothing renews the lease,
+# and when it expires every mTCP tool refuses to run. The agent loop
+# cannot recover from that on its own -- it retries HTGET forever but
+# never re-runs DHCP -- so it costs a trip to the machine.
+#
+packetint 0x60
+hostname DOSBOX
+
+IPADDR 192.168.50.66
+NETMASK 255.255.255.0
+GATEWAY 192.168.50.1
+NAMESERVER 192.168.50.1
+MTU 1500
