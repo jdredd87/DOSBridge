@@ -42,3 +42,23 @@ Check these before you build, and again on the DOS machine:
 `MTCP.NEW` is deliberately **not** called `MTCP.CFG`. If you already have a
 working config, merge the two by hand rather than letting an installer
 overwrite something that took effort to get right.
+
+## Compiler Options
+
+FreePascal was used because it does A great job of doing DOS software and is still maintained.
+So most of the .MD files here will point Claude to use FPC locally on the Windows machine.
+This helps compile local on the Server to speed things up.
+BUT you can tell Claude to use A compiler on the DOS machine itself.
+Prompt such as **Lets created a project on the DOS machine in C:\NewGame and use the Borland Pascal 7 compiler located in C:\BP\BIN**
+Doing something like this you could get Claude to compile software on the DOS machine.
+
+## Future Changes
+
+* Remove mTCP dependency
+* Better documentation
+* Install / Setup Video
+* More Tools
+* More Demos
+* Better Claude .MD files to help new Claude sessions pick up the project and how it works.
+* Add more cross compilers presetup/defined/ready? Open Watcom V2?
+* Add more DOS compilers presetup/defined/ready? Turbo Pascal? Microsoft C? Borland C? Watcom C/C++?
