@@ -113,6 +113,43 @@ try:
     assert got == BLOB, "round trip corrupted the bytes"
     print("   %d bytes out and back, identical" % len(got))
 
+    print("\n### 4b. a retransmitted request must not start a second flow")
+    # dosd spawns a thread with a fresh socket per request and used to
+    # deduplicate only the job poll. A client whose first request went missing
+    # retransmits from the SAME local port, so the two are indistinguishable
+    # here, and both used to be answered -- leaving the loser shouting an OACK
+    # every two seconds at a client already locked on to the winner's transfer
+    # identifier. That is where every "did not confirm blksize" came from, and
+    # the stray OACKs reset the client's stall counter, pinning it inside the
+    # one fault its flow-rebuild recovery exists to escape.
+    #
+    # Two identical RRQs, then count how many distinct server ports answer.
+    # It must be exactly one. Revert the _xfer_holds guard in dosd.py and this
+    # sees two, which is the check that makes the test worth having.
+    rq = (b"\x00\x01" + b"local/PROG.EXE\x00" + b"octet\x00"
+          + b"blksize\x001400\x00")
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.settimeout(3.0)
+    probe.bind(("127.0.0.1", 0))
+    try:
+        probe.sendto(rq, ("127.0.0.1", 8069))
+        time.sleep(0.3)
+        probe.sendto(rq, ("127.0.0.1", 8069))
+        answered = set()
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            try:
+                _data, src = probe.recvfrom(2048)
+            except socket.timeout:
+                break
+            answered.add(src[1])
+    finally:
+        probe.close()
+    print("   distinct server flows that answered: %d" % len(answered))
+    assert len(answered) == 1, (
+        "a retransmitted RRQ started %d flows; exactly 1 must answer"
+        % len(answered))
+
     print("\n### 5. inspect a generated driver JOB.BAT")
     sys.path.insert(0, HERE)
     import dosd

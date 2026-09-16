@@ -1,4 +1,4 @@
-DOS Bridge  build 60  (2026-09-06)
+DOS Bridge  build 62  (2026-09-16)
 
 dosbridge client kit
 ====================

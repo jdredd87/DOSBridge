@@ -1,3 +1,3 @@
 DOS Bridge client
-build 60
-installed 2026-09-06
+build 62
+installed 2026-09-16

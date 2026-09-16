@@ -92,6 +92,11 @@ var
   TftpStallRx   : Word;        { accepted for us during stall windows }
   TftpStallWrong: Word;        { arrived, parsed, not ours }
   TftpStallDrop : Word;        { refused: receiver busy, or oversized }
+  { Packets addressed to our port, correctly formed, from a server flow we
+    are NOT talking to. Non-zero means the server has more than one thread
+    serving this one transfer -- which is what a retransmitted request used
+    to cause. See the OACK branch in TftpGet for why that was expensive. }
+  TftpStrays    : Word;
   { Set by the caller BEFORE a get: the block size to ask for, or 0 to ask
     for nothing and stay on the 512-byte default. The job poll leaves it at
     0 -- a job batch is a couple of blocks and does not want an extra round
@@ -345,6 +350,7 @@ begin
   Tries  := 0;
   Wait   := FirstWait;
   TftpStallRx := 0; TftpStallWrong := 0; TftpStallDrop := 0;
+  TftpStrays := 0;
   MarkRx := NetRxFrames; MarkWr := NetRxWrong; MarkDr := NetRxDrop;
   DeadRuns := 0;
   DeadMark := -1;
@@ -474,11 +480,58 @@ begin
 
     if Op = OP_ERROR then
     begin
+      { Same rule as an OACK, and here it is the difference between a
+        transfer that survives and one that does not: an ERROR ends the
+        whole thing, so honouring one from a flow we are not talking to
+        would let a phantom kill a transfer that was going perfectly. }
+      if (TftpPeerTID <> 0) and (NetFromPort <> TftpPeerTID) then
+      begin
+        Inc(TftpStrays);
+        Continue;
+      end;
       TftpErr := ErrText(Got);
       Break;
     end;
     if Op = OP_OACK then
     begin
+      { An OACK from a port we are NOT locked on to is a second server flow
+        talking to us, and it must be ignored as completely as a stray DATA
+        block is -- which this branch used to fail to do, because only the
+        DATA branch below checked the TID.
+
+        The way a second flow arises: a retransmitted request. dosd spawns a
+        thread with a fresh socket for every RRQ and deduplicated only the
+        job poll, so when our first request went missing (or was merely
+        slow) the retransmit -- sent from the SAME local port, so it looks
+        identical to the server -- started a second flow serving the same
+        file. Both then OACKed us. We locked on to whichever arrived first
+        and the loser spent its whole 8x2s budget re-OACKing a client that
+        was never going to answer, which is where every `did not confirm
+        blksize 1400` in dosd.log came from.
+
+        Accepting those strays cost more than the noise, and this is the
+        expensive part: `Tries := 0` below. A stray arriving every two
+        seconds reset the stall counter every two seconds, so `Tries` could
+        never reach RESTART_AFTER and the rebuild-the-flow recovery -- the
+        one mechanism that has ever cleared this link's stall -- was held
+        off for exactly as long as the phantom kept talking. The transfer
+        sat in a stall it had been carefully taught to escape.
+
+        It also re-ACKed block 0 to the REAL flow on every stray, which that
+        flow reads as a duplicate ACK for an earlier block and answers with
+        an immediate retransmit of the block in flight. So each phantom OACK
+        also bought a duplicate DATA block, on a link whose receiver holds
+        one frame at a time.
+
+        dosd no longer starts the second flow (it drops a request it is
+        already serving, the way it always has for the job poll), but the
+        check belongs here too: this client has to be safe against an older
+        daemon, and a stray is cheap to ignore and expensive to obey. }
+      if (TftpPeerTID <> 0) and (NetFromPort <> TftpPeerTID) then
+      begin
+        Inc(TftpStrays);
+        Continue;
+      end;
       { The server accepted our options. Lock on to its transfer port, take
         the block size it agreed to, and ACK block 0 -- that ACK is what
         tells it to start sending. }
@@ -498,7 +551,10 @@ begin
     if TftpPeerTID = 0 then
       TftpPeerTID := NetFromPort
     else if NetFromPort <> TftpPeerTID then
+    begin
+      Inc(TftpStrays);
       Continue;
+    end;
 
     Blk     := GetW(RxP, 2);
     DataLen := Got - 4;
@@ -642,6 +698,7 @@ begin
   TftpPeerTID := 0;
   TftpBlkSize := TFTP_BLK;
   TftpStallRx := 0; TftpStallWrong := 0; TftpStallDrop := 0;
+  TftpStrays := 0;
   MarkRx := NetRxFrames; MarkWr := NetRxWrong; MarkDr := NetRxDrop;
   DeadRuns := 0;
   DeadMark := -1;

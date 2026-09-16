@@ -521,7 +521,7 @@ of running as a straight diagonal.
 
 The step size matches the ray width exactly: **80 rays across 320 pixels**. It
 is a resolution artifact, not a bug, and it is consistent with the pivot-cache
-measurement in `CLAUDE.md` rather than an alternative to it.
+measurement in `docs/raycast.md` rather than an alternative to it.
 
 Note that `RAYCAST COARSE` is only **half** an A/B for this. It halves the
 column to 2 px and the geometry edges do visibly smooth — but `raycast.pas`

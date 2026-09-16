@@ -214,13 +214,13 @@ begin
     WriteLn(' uget: ', Fit(Leaf(Remote), 16), ' FAILED - ', Fit(TftpErr, 40));
     WriteLn('       rx ', NetRxFrames, ' (', NetRxWrong, ' foreign, ',
             NetRxDrop, ' dropped)  tx ', NetTxFrames, ' (', NetTxFail,
-            ' refused)');
+            ' refused, ', NetArpSent, ' arp, ', NetArpReplied, ' answered)');
     { The stall measurement. Only interesting when a flow was rebuilt:
       it says what reached the card during the silence. }
     if TftpRestarts > 0 then
       WriteLn('       during ', TftpRestarts, ' stall(s): rx ',
               TftpStallRx, ' seen, ', TftpStallWrong, ' not ours, ',
-              TftpStallDrop, ' dropped');
+              TftpStallDrop, ' dropped, ', TftpStrays, ' stray');
     Halt(1);
   end;
 
@@ -231,13 +231,13 @@ begin
             ' resends');
     WriteLn('       rx ', NetRxFrames, ' (', NetRxWrong, ' foreign, ',
             NetRxDrop, ' dropped)  tx ', NetTxFrames, ' (', NetTxFail,
-            ' refused)');
+            ' refused, ', NetArpSent, ' arp, ', NetArpReplied, ' answered)');
     { The stall measurement. Only interesting when a flow was rebuilt:
       it says what reached the card during the silence. }
     if TftpRestarts > 0 then
       WriteLn('       during ', TftpRestarts, ' stall(s): rx ',
               TftpStallRx, ' seen, ', TftpStallWrong, ' not ours, ',
-              TftpStallDrop, ' dropped');
+              TftpStallDrop, ' dropped, ', TftpStrays, ' stray');
   end;
   Halt(0);
 end.

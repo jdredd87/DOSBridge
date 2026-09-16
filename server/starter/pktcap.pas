@@ -6,6 +6,14 @@ program PktCap;
           PKTCAP 10              10 seconds of ARP
           PKTCAP 10 0800         10 seconds of IPv4
           PKTCAP 10 ALL          every frame the card passes up -- see below
+          PKTCAP 10 ALL 65       ...from the driver at INT 65h, not the
+                                 first one found
+
+  THE THIRD ARGUMENT IS A SAFETY FEATURE, not a convenience. Without it this
+  attaches to the first packet driver between 60h and 80h, which on a bridge
+  machine is the network the bridge itself runs over -- and with ALL, frames
+  captured here are frames nobody else gets. Naming a second driver makes
+  the capture harmless: it steals only from the card being debugged.
 
   Exit code: 0 if at least one frame arrived, 1 if none, 2 if the driver
   refused the handle, 3 if no packet driver is installed.
@@ -70,6 +78,7 @@ var
   Filt    : packed array[0..1] of Byte;   { global: Seg() must be our DS }
   Handler : packed record O, S: Word; end;
   PktVec  : Byte;
+  WantVec : Byte;   { 0 = first driver found; else the one asked for }
   Handle  : Word;
   CarryB  : Byte;
   ErrDH   : Byte;
@@ -177,6 +186,7 @@ begin
   FindDriver := False;
   for V := $60 to $80 do
   begin
+    if (WantVec <> 0) and (V <> WantVec) then Continue;
     Of_ := MemW[0 : Word(V) * 4];
     Sg  := MemW[0 : Word(V) * 4 + 2];
     if Sg = 0 then Continue;
@@ -301,6 +311,7 @@ begin
   Secs  := 5;
   AllT  := False;
   TypeW := $0806;
+  WantVec := 0;                  { 0 = take the first driver found }
 
   if ParamCount >= 1 then
   begin
@@ -328,12 +339,27 @@ begin
       if TypeW = 0 then TypeW := $0806;
     end;
   end;
+  if ParamCount >= 3 then
+  begin
+    S := ParamStr(3);
+    N := 0;
+    for I := 1 to Length(S) do
+    begin
+      if      (S[I] >= '0') and (S[I] <= '9') then N := (N shl 4) or (Ord(S[I]) - 48)
+      else if (S[I] >= 'A') and (S[I] <= 'F') then N := (N shl 4) or (Ord(S[I]) - 55)
+      else if (S[I] >= 'a') and (S[I] <= 'f') then N := (N shl 4) or (Ord(S[I]) - 87);
+    end;
+    if (N >= $60) and (N <= $80) then WantVec := Byte(N);
+  end;
 
   WriteLn('=== pktcap: Ethernet capture from the packet driver ===');
 
   if not FindDriver then
   begin
-    WriteLn('  No packet driver in 60h..80h. Nothing to attach to.');
+    if WantVec <> 0 then
+      WriteLn('  No packet driver at INT ', Hex2(WantVec), 'h.')
+    else
+      WriteLn('  No packet driver in 60h..80h. Nothing to attach to.');
     Halt(3);
   end;
   WriteLn('  driver         : INT ', Hex2(PktVec), 'h');

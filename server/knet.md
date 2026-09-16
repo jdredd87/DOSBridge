@@ -98,7 +98,7 @@ run:
 
 **Nothing on the box answers ARP while KNET holds the IP handle.** By then the
 0806 handle is long released, so Windows cannot revalidate its cache and stops
-delivering — the same mechanism CLAUDE.md's poll-hold section documents, seen
+delivering — the same mechanism `docs/agent.md`'s poll-hold section documents, seen
 from the other side.
 
 Broadcast needs no address resolution at all. That is also why the TSR carries

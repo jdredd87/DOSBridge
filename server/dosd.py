@@ -808,7 +808,7 @@ def build_deploy_batch(job_id, name, dest_dir):
         UGET_DOS + " %UPHOST% " + name + " C:\\WORK\\DEPLOY.TMP",
         "IF NOT EXIST C:\\WORK\\DEPLOY.TMP GOTO NOFILE",
     ] + verify_then_install(name, dest) + [
-        "IF NOT EXIST %s GOTO NOFILE" % dest,
+        "IF NOT EXIST %s GOTO NOCOPY" % dest,
         "ECHO ##JOB=%s > C:\\WORK\\RES.TXT" % job_id,
         "DIR %s >> C:\\WORK\\RES.TXT" % dest,
         "ECHO ##RC=0 >> C:\\WORK\\RES.TXT",
@@ -822,6 +822,23 @@ def build_deploy_batch(job_id, name, dest_dir):
         " >> C:\\WORK\\RES.TXT" % name,
         "ECHO ##RC=254 >> C:\\WORK\\RES.TXT",
     ] + send_result_lines("badcrc") + [
+        "GOTO END",
+        # Two failures used to share the NOFILE label, and so shared its
+        # message.  They are not the same fault, and the wrong one sends you
+        # looking at the network: the fetch can succeed perfectly well and
+        # the COPY into place still fail.  Most often that is a destination
+        # given as a full file path where a DIRECTORY is wanted -- DOS says
+        # "Path not found" for C:\DIR\FILE.EXE\FILE.EXE, and the deploy then
+        # reported "download failed" about a transfer that had worked.
+        ":NOCOPY",
+        job_foot(job_id, "FAILED - could not put it in place"),
+        "ECHO ##JOB=%s > C:\\WORK\\RES.TXT" % job_id,
+        "ECHO dosd: %s downloaded, but copying it to %s failed."
+        " >> C:\\WORK\\RES.TXT" % (name, dest),
+        "ECHO The destination is a DIRECTORY, not a file path."
+        " >> C:\\WORK\\RES.TXT",
+        "ECHO ##RC=254 >> C:\\WORK\\RES.TXT",
+        UPUT_DOS + " %UPHOST% C:\\WORK\\RES.TXT result",
         "GOTO END",
         ":NOFILE",
         job_foot(job_id, "FAILED - download"),
@@ -1357,8 +1374,18 @@ TFTP_TIMEOUT = 2.0
 # delivered and the poll fails with no packet on the wire at all.
 # Measured: an 8-second hold outlived the cache entry often enough to
 # fail roughly one poll in three. Two seconds always lands inside it.
-# The real fix is for the DOS side to answer ARP; until then, do not
-# raise this.
+#
+# THE REAL FIX IS DONE, as of 2026-09-12: net.pas holds the 0806 handle
+# alongside 0800 and answers ARP requests for the box, so this host's entry
+# now resolves properly and stays Reachable instead of ageing out into
+# Unreachable. The same fault was the mid-transfer stall -- see the ARP
+# section in docs/network.md, which has the neighbour-state traces.
+#
+# The hold is NOT being raised on the strength of that. The comment above
+# describes a poll failure measured against the old behaviour, and whether a
+# longer hold is safe now is a question for a measurement rather than for
+# reasoning from the fix. It is also a box running an OLD UGET that a longer
+# hold would break, and there is no way from here to tell which it is.
 # NOTE: serve_job holds for POLL_HOLD_SECS, not this. This constant was
 # added when the hold was 'reduced 8s -> 2s' to chase the poll losses,
 # and nothing ever read it -- which is why that change appeared to make
@@ -1376,6 +1403,12 @@ TFTP_HOLD_SECS = 2  # unused; see POLL_HOLD_SECS
 _job_holds = {}
 _job_holds_lock = threading.Lock()
 
+# The same idea for file transfers, keyed by (client address, opcode, name).
+# See the long note in tftp_serve for what a duplicate flow does to a client
+# that is already talking to the first one.
+_xfer_holds = {}
+_xfer_holds_lock = threading.Lock()
+
 OP_RRQ, OP_WRQ, OP_DATA, OP_ACK, OP_ERROR = 1, 2, 3, 4, 5
 
 
@@ -1384,7 +1417,69 @@ def tftp_error(sock, addr, code, msg):
                 + msg.encode("latin-1", "replace") + b"\0", addr)
 
 
-def tftp_send_blob(sock, addr, blob, retries=None, blk=None):
+# Flows currently serving a file, keyed by (client IP, name). The value is a
+# list of threading.Event, one per live flow, set to ask that flow to stop.
+#
+# THE ZOMBIE AVALANCHE, which is what this exists to stop.
+#
+# When a transfer stalls, the client's recovery is to tear its flow down,
+# take a NEW local port and ask for the rest of the file. That is the only
+# thing that has ever cleared a stall, and it stays. What nobody accounted
+# for is what the ABANDONED flow does next: nothing tells this end, so it
+# sits in tftp_send_blob retransmitting the block in flight 8 times at a
+# 2-second timeout -- sixteen full seconds of DATA aimed at a port the client
+# has already stopped listening on.
+#
+# The client restarts after three silent timeouts, about six seconds. So a
+# zombie outlives its replacement by ten seconds, and at 16 seconds of life
+# against a 6-second restart interval roughly three of them are shouting at
+# any moment. Every one of those packets still arrives at the card, still has
+# to be inspected, and -- this is what makes it an avalanche rather than
+# waste -- the DOS receiver holds exactly ONE frame at a time. A zombie's
+# DATA sitting in that slot means the real flow's next block is dropped on
+# arrival. Dropped blocks cause a stall; a stall causes a restart; a restart
+# creates another zombie.
+#
+# The measurement that showed it: a 5 MB fetch failed after 461s with 23
+# stalls, and of the 90 frames that arrived DURING those stall windows, 89
+# were rejected as "not ours" -- against 8% foreign traffic over the transfer
+# as a whole. During a stall the card is not quiet and it is not deaf. It is
+# busy carrying our own dead flows' retransmissions.
+#
+# So: a new request for the same file from the same client means every
+# earlier flow is abandoned by definition -- the client just said so -- and
+# they are cancelled rather than left to time out.
+_flows = {}
+_flows_lock = threading.Lock()
+
+
+def flow_begin(ip, name):
+    """Register a flow, cancelling any earlier one for the same file."""
+    key = (ip, name.lower())
+    ev = threading.Event()
+    with _flows_lock:
+        old = _flows.get(key) or []
+        for prev in old:
+            prev.set()
+        _flows[key] = [e for e in old if not e.is_set()] + [ev]
+    if old:
+        log("tftp: %s asked for %s again -- cancelling %d superseded flow(s)"
+            % (ip, name, len(old)))
+    return ev
+
+
+def flow_end(ip, name, ev):
+    key = (ip, name.lower())
+    with _flows_lock:
+        live = _flows.get(key)
+        if live is not None:
+            if ev in live:
+                live.remove(ev)
+            if not live:
+                _flows.pop(key, None)
+
+
+def tftp_send_blob(sock, addr, blob, retries=None, blk=None, cancel=None):
     """Serve a blob as a TFTP read.
 
     Returns (ok, blocks_acked). The count matters for the job resource: a
@@ -1413,6 +1508,12 @@ def tftp_send_blob(sock, addr, blob, retries=None, blk=None):
         pkt = struct.pack("!HH", OP_DATA, block & 0xFFFF) + chunk
         acked = False
         for _ in range(retries):
+            # Checked before every send, not just per block: the whole point
+            # is to stop putting packets on the wire the moment the client
+            # tells us it has moved on, and the retry loop is where a dead
+            # flow spends all of its time.
+            if cancel is not None and cancel.is_set():
+                return False, acked_count
             sock.sendto(pkt, addr)
             try:
                 while True:
@@ -1488,7 +1589,7 @@ def tftp_parse_options(parts):
     return opts
 
 
-def tftp_send_oack(sock, addr, opts, retries):
+def tftp_send_oack(sock, addr, opts, retries, cancel=None):
     """Acknowledge the options we accepted, and wait for the ACK of block 0.
 
     RFC 2347: the OACK replaces DATA block 1 as the first thing the client
@@ -1501,6 +1602,8 @@ def tftp_send_oack(sock, addr, opts, retries):
     for k, v in opts:
         pkt += k.encode() + b"\0" + str(v).encode() + b"\0"
     for _ in range(retries):
+        if cancel is not None and cancel.is_set():
+            return False
         sock.sendto(pkt, addr)
         try:
             while True:
@@ -1569,7 +1672,8 @@ def upload_buf(key, resume_at):
         return buf
 
 
-def tftp_recv_blob(sock, addr, blk_size=None, oack=None, out=None):
+def tftp_recv_blob(sock, addr, blk_size=None, oack=None, out=None,
+                   cancel=None):
     """Take a TFTP write. Returns the bytes, or None if it failed.
 
     `blk_size` is the negotiated block size; `oack` is the option list to
@@ -1592,6 +1696,11 @@ def tftp_recv_blob(sock, addr, blk_size=None, oack=None, out=None):
     while True:
         got = None
         for _ in range(TFTP_RETRIES):
+            # A superseded write flow re-ACKs into a port the client has
+            # stopped listening on, for exactly the same reason and with
+            # exactly the same effect as a superseded read flow. See _flows.
+            if cancel is not None and cancel.is_set():
+                return None
             try:
                 data, src = sock.recvfrom(blk_size + 512)
             except socket.timeout:
@@ -1677,6 +1786,49 @@ def tftp_serve(req, addr):
     parts = req[2:].split(b"\0")
     name = parts[0].decode("latin-1", "replace")
 
+    # A repeat of a request we are ALREADY serving is a retransmit, and the
+    # flow that is running will answer it. Starting a second one does active
+    # harm, which is not obvious and cost weeks.
+    #
+    # The client retransmits its request when the first reply does not arrive
+    # in time -- from the SAME local port, because only a flow REBUILT after a
+    # stall picks a new one. So the two requests are indistinguishable to us,
+    # and each used to get its own thread, its own socket and its own copy of
+    # the file. Both then answered. The client locks on to whichever TID it
+    # hears from first (RFC 1350's transfer identifier, and correct), so the
+    # loser spent its entire retry budget -- 8 attempts at 2 seconds -- taking
+    # to a client that could never reply. Every `did not confirm blksize 1400`
+    # in dosd.log is one of those, 32 of them, and they cluster exactly where
+    # transfers were failing.
+    #
+    # The cost was never the wasted thread. It was what the phantom did to the
+    # client: an OACK every two seconds, which the client accepted (its OACK
+    # branch did not check the TID) and answered by resetting its stall
+    # counter and re-ACKing block 0 at the real flow. Resetting that counter
+    # held off the rebuild-the-flow recovery for as long as the phantom kept
+    # talking -- the transfer was pinned inside the one fault it knows how to
+    # escape -- and the stray ACK 0 made the real flow retransmit the block in
+    # flight, on a link whose card holds one frame at a time.
+    #
+    # This is the same deduplication the job poll has had since it was found
+    # that a retransmitted poll took a second job off the queue. It was always
+    # needed on both, and only the job case had been hit.
+    #
+    # A resume is deliberately NOT caught: it carries `name@offset` and comes
+    # from a new port, so it differs in both halves of the key. That matters,
+    # because a resume arriving while the stalled flow is still winding down
+    # is the normal case, not the exception.
+    hold = None
+    if op in (OP_RRQ, OP_WRQ) and name.lower() != "job":
+        hold = (addr, op, name.lower())
+        with _xfer_holds_lock:
+            if hold in _xfer_holds:
+                log("tftp: %s re-asked for %s while it is already being "
+                    "served -- dropped, the running flow will answer"
+                    % (addr[0], name))
+                return
+            _xfer_holds[hold] = True
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("", 0))
     sock.settimeout(TFTP_TIMEOUT)
@@ -1736,21 +1888,44 @@ def tftp_serve(req, addr):
                 blk = max(8, min(want, TFTP_BLK_MAX))
             if resume_at:
                 if resume_at > len(blob):
+                    # The client believes it has more of this file than
+                    # exists. That is a client-side overcount and it ends the
+                    # transfer, so say so here -- it used to be answered with
+                    # an ERROR and no log line at all, which made a 5 MB fetch
+                    # die at 95% for no recorded reason.
+                    log("tftp: %s asked to resume %s at byte %d but it is "
+                        "only %d bytes -- refusing"
+                        % (addr[0], name, resume_at, len(blob)))
                     tftp_error(sock, addr, 1, "resume past end of file")
                     return
                 log("tftp: %s resuming %s at byte %d"
                     % (addr[0], name, resume_at))
                 blob = blob[resume_at:]
-            if blk != TFTP_BLK:
-                if not tftp_send_oack(sock, addr, [("blksize", blk)],
-                                      FILE_SEND_RETRIES):
-                    log("tftp: %s did not confirm blksize %d for %s"
-                        % (addr[0], blk, name))
-                    return
-            ok, _ = tftp_send_blob(sock, addr, blob,
-                                   retries=FILE_SEND_RETRIES, blk=blk)
-            log("tftp: sent %s (%d bytes, blk %d) to %s%s"
-                % (name, len(blob), blk, addr[0], "" if ok else "  FAILED"))
+            # Registered AFTER the file is known to exist, so a request for a
+            # missing name cannot cancel a transfer that is going fine.
+            cancel = flow_begin(addr[0], name)
+            try:
+                if blk != TFTP_BLK:
+                    if not tftp_send_oack(sock, addr, [("blksize", blk)],
+                                          FILE_SEND_RETRIES, cancel=cancel):
+                        if cancel.is_set():
+                            log("tftp: %s superseded before blksize %d was "
+                                "confirmed for %s" % (addr[0], blk, name))
+                        else:
+                            log("tftp: %s did not confirm blksize %d for %s"
+                                % (addr[0], blk, name))
+                        return
+                ok, _ = tftp_send_blob(sock, addr, blob,
+                                       retries=FILE_SEND_RETRIES, blk=blk,
+                                       cancel=cancel)
+            finally:
+                flow_end(addr[0], name, cancel)
+            if cancel.is_set() and not ok:
+                log("tftp: send of %s to %s stopped -- superseded by a newer "
+                    "request" % (name, addr[0]))
+            else:
+                log("tftp: sent %s (%d bytes, blk %d) to %s%s"
+                    % (name, len(blob), blk, addr[0], "" if ok else "  FAILED"))
 
         elif op == OP_WRQ:
             # "name@12345" resumes a write that stalled, the mirror of the
@@ -1784,8 +1959,12 @@ def tftp_serve(req, addr):
                 wblk = max(8, min(want, TFTP_BLK_MAX))
                 if wblk != TFTP_BLK:
                     wack = [("blksize", wblk)]
-            blob = tftp_recv_blob(sock, addr, blk_size=wblk, oack=wack,
-                                  out=buf)
+            wcancel = flow_begin(addr[0], "wrq:" + name)
+            try:
+                blob = tftp_recv_blob(sock, addr, blk_size=wblk, oack=wack,
+                                      out=buf, cancel=wcancel)
+            finally:
+                flow_end(addr[0], "wrq:" + name, wcancel)
             if blob is None:
                 # Keep what arrived. The client is expected to come back with
                 # a new flow asking to carry on, and throwing the bytes away
@@ -1822,12 +2001,44 @@ def tftp_serve(req, addr):
         log("tftp: %s" % e)
     finally:
         sock.close()
+        if hold is not None:
+            with _xfer_holds_lock:
+                _xfer_holds.pop(hold, None)
 
 
 def tftp_listen():
+    # NO SO_REUSEADDR HERE, and that is the whole point of this function's
+    # first three lines.
+    #
+    # UDP has no TIME_WAIT, so SO_REUSEADDR buys nothing on this socket --
+    # and on Windows it lets a SECOND dosd bind the same port silently.
+    # Two sockets on one UDP port means each arriving datagram is delivered
+    # to one of them arbitrarily, so a multi-datagram TFTP transfer gets
+    # split between two daemons that each hold their own transfer state.
+    # That produces stalled transfers, deploys that fail their CRC, and job
+    # results that never come back -- all of which read as faults on the
+    # DOS side or on the wire.
+    #
+    # Found on 2026-09-10 with two daemons 30 minutes apart in the process
+    # list, both bound to 8069, both appending to the same dosd.log so the
+    # log looked perfectly continuous. These notes already warned that "is
+    # exactly one running?" is worth checking before believing any
+    # measurement; this makes the question unnecessary.
+    #
+    # Without it the second instance fails to bind, which is the correct
+    # outcome and is now said out loud rather than left as a traceback in a
+    # daemon thread.
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("0.0.0.0", TFTP_PORT))
+    try:
+        s.bind(("0.0.0.0", TFTP_PORT))
+    except OSError as exc:
+        log("dosd: cannot bind UDP %d -- another dosd is already running."
+            % TFTP_PORT)
+        log("      Stop it first (Ctrl-C in its window, or dosctl shutdown).")
+        log("      Two daemons on this port split TFTP transfers between")
+        log("      them and the symptoms look like a failing DOS box: %s"
+            % exc)
+        os._exit(1)
     while True:
         try:
             req, addr = s.recvfrom(2048)

@@ -488,6 +488,29 @@ rc 0 is also what a missing program looks like, and leaves the code alone.
 failed, 127 = a command named a program that is not there, 124 = timed out
 waiting for the DOS box.
 
+**Only one `dosd` at a time, and a second one now says so.** Two instances ran
+side by side for half an hour once, both bound to UDP 8069 because
+`SO_REUSEADDR` was set on that socket -- UDP has no `TIME_WAIT`, so the option
+bought nothing and only let the second bind succeed quietly. Each arriving
+datagram then went to one daemon or the other at random, splitting
+multi-datagram transfers between two of them: stalled deploys, failed CRCs,
+results that never arrived. Every one of those reads as a fault on the DOS box
+or on the wire. The option is gone, so a second instance is refused with errno
+10048 instead of competing. TCP was never affected -- a connection belongs to
+whichever listener accepts it.
+
+**If a transfer stalls, suspect ARP before the wire.** The one bug that cost
+the most here was the DOS box never answering an ARP request: the peer's cache
+expired mid-transfer, the peer stopped sending, and it looked for weeks like a
+link that dropped frames. `starter/net.pas` answers ARP now, and 10 MB moves
+byte-exact. Two habits came out of it and both are worth keeping -- run mTCP as
+a control, because it is a completely independent stack on the same card and
+driver, so if it moves a large file cleanly the fault is ours; and do not trust
+`arp -a`, which prints a `dynamic` entry for an address whose neighbour state is
+`Unreachable`. The right hypothesis was raised and discarded months earlier
+because the tool could not express the answer. `docs/network.md` has the whole
+account.
+
 **Read `dosd.log`, not the console.** `dosd` mirrors everything it prints to a
 file beside `dosd.py`. The lines that say whether a batch was dispatched and
 whether the box acknowledged it (`-> dispatch`, `acked` / `NO ACK`, `<- result`)
@@ -551,6 +574,9 @@ first time you use them.
 
 ```
 CLAUDE.md         project instructions for Claude Code -- read this first
+docs/             the long-form reference: the tools, the hardware, the
+                  graphics work, the raycaster, keyboard injection, the
+                  network stack and the agent loop. One subject per file
 installer-src/    authored installer scripts. `makeinst.cmd` turns these
                   plus the tree below into C:\DosBridgeInstaller -- nothing
                   generated is kept in here
@@ -590,7 +616,7 @@ are in `CLAUDE.md`; the ones worth knowing about up front:
 | `VMODES` `VIDCHK` `VESACHK` | every video mode; `-t` sets each, `-d n` displays it |
 | `FPU` `BENCH` `PROFTEST` | coprocessor tests, measured timings, profiling |
 | `RAYCAST` `FRACTAL` `SCROLLER` | the demos: raycaster, Mandelbrot, mode X scroller |
-| `PKTDRV` `PKTCAP` `ARP` | packet driver probe, frame capture, who-has and `/24` sweeps |
+| `PKTDRV` `PKTCAP` `ARP` | packet driver probe, frame capture, who-has and `/24` sweeps. `PKTCAP` takes the vector to attach to — give it one on a machine with two adapters, or it captures from the network the bridge runs over |
 | `UGET` `UPUT` `NTP` | the bridge's own UDP transport, and what time a server thinks it is |
 | `SERIAL` `MOUSE` `BEEP` | UART, INT 33h mouse, PC speaker |
 | `ELAPSED` `KEYHIT` | job stopwatch, and the ScrollLock stop signal |
