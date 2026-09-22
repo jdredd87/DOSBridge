@@ -166,6 +166,57 @@ such a thumbnail by a **depth-ordered grey ramp, not by true luminance** -- a
 colour palette is chosen for hue, and ranking it by brightness turns a legible
 picture into noise.
 
+## The pixel pan is latched a refresh later than the start address
+
+**Measured on the V30 on 2026-09-21, in `starter/parallax.pas`.** `ModeX.ShowAt`
+sets the start address, waits for the vertical retrace, and then sets the
+Attribute Controller's pixel pan -- and the comment in `modex.pas` says that
+order matters because the CRTC latches the start address at the top of the
+retrace while the AC latches the pan at the start of the frame.
+
+On this card the pan written *after* the retrace has begun is already too
+late. It takes effect one refresh after the address it belongs with.
+
+Most of the time that is invisible, because both are advancing together. It
+shows on the one frame in four where the pan WRAPS: the start address steps on
+by a whole four-pixel unit and the pan drops 3 to 0, so for that frame the
+screen gets the new address with the old pan -- the layer four pixels too far
+along -- and then snaps three pixels back.
+
+Counted off the capture card, tracking the sun's centroid frame by frame:
+
+```
+before   +1.1 +1.1  0  +1.1  0  +1.1  0  +4.5  -3.4   0  +1.1 ...   screen px
+after    +1.1 +1.1 +1.1 +1.1 +1.1 +1.1 +1.1 +1.1 +1.1 +1.1 +1.1     (no glitch)
+```
+
+**The periodicity is what identified it** -- one frame in four is the pan's own
+period, and no other quantity in the demo has that. The size alone could have
+been anything.
+
+The fix is to write the pan *before* waiting for the retrace, with the start
+address, so both are latched by the same one. `starter/parallax.pas` does that
+in its own `ShowFar`; `modex.pas` has NOT been changed, because `scroller.pas`
+depends on it and its frame budget is documented and verified. **Anything that
+scrolls a mode X layer at one pixel a frame will show this**, and scroller
+almost certainly does -- nobody had measured it frame by frame before.
+
+## A frame that is sometimes one refresh and sometimes two is worse than always two
+
+Same project, same day. With the work at about 15ms against a 14.27ms refresh
+-- just over, and not by a reliable margin -- a frame takes one refresh when it
+comes in under and two when it does not. The measured result was **38.4 fps**,
+which is a mixture of 14.3ms and 28.5ms frames: it averages to a
+respectable-looking number and it judders, because consecutive frames are held
+on screen for different lengths of time and a one-pixel-a-frame layer lands its
+steps at uneven intervals.
+
+`CLAUDE.md` already records the same lesson from the scroller, where 56 fps
+looked worse than a steady 35. The cure is to pad the frame up to a whole
+number of refreshes before waiting for the retrace -- a frame that was going to
+be short spins, one that already overran does not wait at all. **Padding is not
+throttling**: the budget it pads to is the one the beam already imposes.
+
 ## Sound while something else is running: `starter/opl2.pas`
 
 `AMOZART` plays a tune and does nothing else, so it can key a note and wait.

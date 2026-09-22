@@ -36,7 +36,8 @@ program UPut;
   Failures always print, because a transfer that quietly did nothing is the
   one thing worse than a noisy console. }
 
-uses Net, Tftp;
+uses VidFix, Net, Tftp;   { VidFix: see vidfix.pas -- the runtime can hook INT 10h,
+                             which wedges a 386 with no coprocessor. Inert elsewhere. }
 
 var
   Server : TIP;

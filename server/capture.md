@@ -481,6 +481,15 @@ first.
 | the preview looks frozen | the DOS box is idle. See above — it is almost never the capture |
 | dropped frames in a recording | raise `rtbufsize`, then make `preset` faster |
 
+**A mode change costs about 40 seconds of `blank`.** Measured 2026-09-18 with
+CH375Camera's `CAMLIVE`: text to mode 13h (or mode X), a burst of stills every
+6 s, and every frame from about 10 s to about 45 s after the switch read
+uniform `rgb(0,0,0)` -- then the picture appeared, and had been on the DOS
+screen the whole time. Switching back to text costs the same again. So a
+program that changes mode and exits within half a minute is never seen at
+all; hold the mode for a minute before concluding it drew nothing. That is
+exactly the mistake that was made the first time.
+
 If the device gets stuck after something was killed, the holder is an orphaned
 process:
 

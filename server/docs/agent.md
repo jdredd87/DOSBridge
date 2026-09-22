@@ -983,7 +983,9 @@ Verified on hardware 2026-08-30, after the coprocessor work:
   true and the `db`-encoded 186 immediate shift really does execute -- so the
   whole gating mechanism works end to end, not just in theory.
 - The **shift-count test has still never run here**: `AAD` answers NEC first
-  and short-circuits it. A 186/286/386 result remains unconfirmed.
+  and short-circuits it. The 386 branch IS now confirmed: a Gateway 2000
+  386SX/25 reports `cpu386` and `Has186` true, 2026-09-19. 186 and 286
+  remain unconfirmed.
 - The FPU probe runs on a machine with **no** coprocessor without hanging,
   which was the main risk in it. `FPU.EXE` reports `none` and exits 1;
   `BENCH`'s four coprocessor rows skip cleanly.

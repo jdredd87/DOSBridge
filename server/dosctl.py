@@ -25,6 +25,7 @@ DOS errorlevel. So from Claude's point of view the DOS machine is just a test ru
   dosctl reboot [--cold]            reboot it and wait for it to come back
   dosctl stop                       stop the agent loop (ONE-WAY -- see below)
   dosctl status                     is the DOS box alive and polling?
+  dosctl boxes                      which DOS machines this bridge knows
   dosctl shutdown                   stop dosd itself (this machine only)
   dosctl power [status|on|off|cycle]  smart plug, if one is configured
         reset                       forget the cycle history
@@ -45,7 +46,25 @@ C:\\AI\\AI.BAT, or a power cycle. Pressing Q on the box does the same thing.
 Options: --timeout SECS (default 120), --reboot (reboot after run),
          --cold (cold boot instead of warm), --server HOST:PORT,
          --out PATH (where `pull` writes; default: basename in the cwd),
-         --project NAME (which staging namespace to use; normally inferred)
+         --project NAME (which staging namespace to use; normally inferred),
+         --box ID (which DOS machine; `--box all` runs on every one)
+
+MORE THAN ONE DOS MACHINE. With a boxes.json registering several, every
+command needs to know which one it means. In order: --box ID, then $DOSBOX,
+then a .dosbox file at or above the working directory (so projects/foo/ can
+pin itself to one machine), then "default" in boxes.json, then the sole
+registered box. Ambiguity is a hard error listing the candidates, never a
+guess -- a job that silently picks a machine returns a result that looks
+entirely correct and simply ran on the wrong CPU.
+
+`--box all` runs `run`, `exec` and `verify` on every machine at once and
+prints the answers side by side with the differences called out. That is the
+point of the whole thing: CLAUDE.md requires everything in starter/ to work
+on both machines, and that requirement is otherwise enforced by a human
+swapping an SD card and remembering.
+
+With no boxes.json none of this applies and the bridge talks to one machine
+exactly as it always has.
 
 Staging is namespaced by project. A file under projects/NAME/ stages as
 NAME/FILE.EXE, one under starter/ as starter/FILE.EXE, and anything else as
@@ -63,10 +82,13 @@ import os
 import re
 import shutil
 import sys
+import threading
 import time
 import zlib
 import urllib.error
 import urllib.request
+
+import boxes as boxreg
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FILES_DIR = os.path.join(HERE, "files")
@@ -367,6 +389,49 @@ def agent_addresses(text):
     return srv, uphost
 
 
+def agent_boxid(text):
+    """The SET BOXID= an agent loop declares itself as, or None.
+
+    BOXID is the same class of fact as the two addresses above, and for the
+    same reason: it is per machine, it lives in a file that one template
+    overwrites wholesale, and getting it wrong needs hands on a keyboard to
+    find. Without this, `dosctl upgrade --agent` would stamp the template's
+    id onto every box it touched and leave two machines claiming one
+    identity -- the cloned-SD-card footgun arriving by a second route, from
+    a command that is supposed to be routine.
+    """
+    for raw in text.splitlines():
+        t = raw.strip()
+        if t.upper().startswith("SET BOXID="):
+            return t.split("=", 1)[1].strip() or None
+    return None
+
+
+def set_agent_boxid(text, box):
+    """Rewrite SET BOXID= to `box`. Returns (text, how).
+
+    Substitution rather than refusal, which is the opposite of what the
+    address guard does, and deliberately: the addresses are the same for
+    every machine on this bridge, so a mismatch there means somebody got
+    something wrong. The id is different for every machine by definition,
+    so one template can only ever carry one of them -- refusing would make
+    upgrading the second box impossible.
+
+    The value comes from boxes.json, which is the registry dosd routes on.
+    Taking it from there rather than from the file being deployed is what
+    stops the two disagreeing.
+    """
+    out, done = [], False
+    for raw in text.splitlines(True):
+        if raw.strip().upper().startswith("SET BOXID=") and not done:
+            eol = "\r\n" if raw.endswith("\r\n") else "\n"
+            out.append("SET BOXID=%s%s" % (box or "", eol))
+            done = True
+        else:
+            out.append(raw)
+    return "".join(out), ("rewritten" if done else "absent")
+
+
 def parse_dos_dir(text):
     """{NAME.EXT: size} from a DOS `DIR` listing.
 
@@ -380,6 +445,22 @@ def parse_dos_dir(text):
         if m:
             out["%s.%s" % (m.group(1), m.group(2))] = int(m.group(3).replace(",", ""))
     return out
+
+
+def poll_age(st, box=None):
+    """How long since THIS box polled, from a /status body.
+
+    The top-level `last_poll_secs_ago` is the newest poll from ANY machine,
+    kept so an old dosctl still reads a new dosd. Watching a reboot with it
+    would be a wrong-box bug of the worst kind: the other box polls every
+    six seconds, so a machine that never came back would be declared healthy
+    within two samples and the rollback instructions would never print.
+    """
+    box = box if box is not None else current_box()
+    per = st.get("boxes") or {}
+    if box and box in per:
+        return per[box].get("last_poll_secs_ago")
+    return st.get("last_poll_secs_ago")
 
 
 def _watch_box(server, label, limit=420, back=30, assume_gone=False):
@@ -414,7 +495,7 @@ def _watch_box(server, label, limit=420, back=30, assume_gone=False):
     t0 = time.time()
     while time.time() - t0 < limit:
         time.sleep(2)
-        age = api(server, "/status").get("last_poll_secs_ago")
+        age = poll_age(api(server, "/status"))
         if age is None:
             continue
         if not gone and age > 15:
@@ -501,7 +582,7 @@ def build_path(build, name):
     return p if os.path.isfile(p) else os.path.join(build, name.lower())
 
 
-def verify_tools(args, names, build):
+def verify_tools(args, names, build, chunk=8):
     """CRC-32 the named tools on the DOS box against the local build.
 
     Deploying a tool was only ever confirmed with `IF EXIST`, and the
@@ -522,44 +603,86 @@ def verify_tools(args, names, build):
     `HD` print an error and no crc32 line at all, which without the markers
     would shift every later result by one and mis-report every tool after it.
 
-    Returns (checked, [(name, want, got), ...]), or (None, []) if the box has
-    no HD.EXE to ask.
+    ASKED IN CHUNKS, and that is not a performance tweak. One job carrying
+    all 41 checks produces a 40-odd line result, which is the largest payload
+    the bridge ever asks a box to send -- and on a box with a weak link the
+    whole result is what gets lost. Empty output then reached the code below
+    as "no crc lines at all", which it reported as `HD.EXE is not on the
+    box`: a healthy, fully-deployed toolset described as a missing tool, from
+    the one command whose entire job is to tell you the truth. Measured on
+    hardware 2026-09-21: five files per job answered 5/5 or 0/5 and never
+    partially, so the cure is a smaller job, not a longer timeout.
+
+    "NOT MEASURED" IS A THIRD ANSWER and is kept separate from MISSING. A
+    file whose `##F=` marker arrived but which produced no crc32 line really
+    is absent or unreadable -- the output reached that point. A file whose
+    marker never arrived tells us nothing at all. Collapsing the two is
+    exactly the mistake above, one level down.
+
+    Returns (checked, [(name, want, got), ...], [unmeasured]), or
+    (None, [], []) if the box genuinely has no HD.EXE.
     """
     if not names:
-        return 0, []
-    cmds = []
-    for n in names:
-        cmds.append("ECHO ##F=%s" % n)
-        cmds.append("%s\\HD.EXE %s\\%s 0 1"
-                    % (TOOLS_DIR_DOS, TOOLS_DIR_DOS, n))
-    # HD reads the whole file to checksum it, and these are 8086 disk reads.
-    # Budget per file rather than relying on the default.
-    tmo = max(args.timeout, 30 + 4 * len(names))
-    job = api(args.server, "/queue", {
-        "kind": "raw", "cmds": cmds, "timeout": tmo, "echo": False,
-    })
-    res = api(args.server, "/result/%s" % job["id"], timeout=tmo + 30)
-    out = res.get("output") or ""
+        return 0, [], []
 
-    seen, cur = {}, None
-    for line in out.splitlines():
-        line = line.strip()
-        if line.startswith("##F="):
-            cur = line[4:].strip().upper()
-        else:
-            m = CRC_LINE.match(line)
-            if m and cur:
-                seen[cur] = m.group(1).upper()
-    if not seen:
-        return None, []
+    # Settle "is HD even there?" with one tiny job before asking anything
+    # large. Its result is a single line, so it survives a link that loses
+    # the big ones -- which is what makes the distinction trustworthy.
+    probe = api(args.server, "/queue", {
+        "kind": "raw", "timeout": max(args.timeout, 60), "echo": False,
+        "cmds": ["IF EXIST %s\\HD.EXE ECHO ##HD-OK" % TOOLS_DIR_DOS],
+    })
+    pres = api(args.server, "/result/%s" % probe["id"],
+               timeout=max(args.timeout, 60) + 30)
+    if "##HD-OK" not in (pres.get("output") or ""):
+        return None, [], []
+
+    seen, unmeasured = {}, []
+    for i in range(0, len(names), chunk):
+        batch = names[i:i + chunk]
+        cmds = []
+        for n in batch:
+            cmds.append("ECHO ##F=%s" % n)
+            cmds.append("%s\\HD.EXE %s\\%s 0 1"
+                        % (TOOLS_DIR_DOS, TOOLS_DIR_DOS, n))
+        # HD reads the whole file to checksum it, and these are 8086 disk
+        # reads. Budget per file rather than relying on the default.
+        tmo = max(args.timeout, 30 + 4 * len(batch))
+
+        marked = set()
+        for attempt in (1, 2):
+            job = api(args.server, "/queue", {
+                "kind": "raw", "cmds": cmds, "timeout": tmo, "echo": False,
+            })
+            res = api(args.server, "/result/%s" % job["id"], timeout=tmo + 30)
+            cur = None
+            for line in (res.get("output") or "").splitlines():
+                line = line.strip()
+                if line.startswith("##F="):
+                    cur = line[4:].strip().upper()
+                    marked.add(cur)
+                else:
+                    m = CRC_LINE.match(line)
+                    if m and cur:
+                        seen[cur] = m.group(1).upper()
+            # One retry, for a chunk whose result went missing entirely.
+            # Retrying a chunk that answered would only cost time.
+            if marked:
+                break
+
+        for n in batch:
+            if n.upper() not in marked:
+                unmeasured.append(n)
 
     bad = []
     for n in names:
+        if n in unmeasured:
+            continue
         want = "%08X" % local_crc(build_path(build, n))
         got = seen.get(n.upper(), "MISSING")
         if want != got:
             bad.append((n, want, got))
-    return len(names), bad
+    return len(names) - len(unmeasured), bad, unmeasured
 
 
 def upgrade_tools(args, tail, dry, force):
@@ -637,7 +760,7 @@ def upgrade_tools(args, tail, dry, force):
     # (the failure cost nothing) but reads as "never mind" if the two numbers
     # are printed side by side without saying so.
     sent = [n for n, _ in todo]
-    checked, mismatched = verify_tools(args, sent, build)
+    checked, mismatched, unmeasured = verify_tools(args, sent, build)
     if checked is None:
         print("not verified: %s\\HD.EXE is not on the box yet"
               % TOOLS_DIR_DOS)
@@ -647,6 +770,15 @@ def upgrade_tools(args, tail, dry, force):
                              % (name, want, got))
         print("checked by CRC-32: %d of %d on the box match the build"
               % (checked - len(mismatched), checked))
+        # Said out loud rather than folded into the count. These were sent
+        # and may well be fine; what is true is that nobody knows, and a
+        # deploy reported as verified when part of it was never checked is
+        # the quiet half-truth this whole command exists to avoid.
+        if unmeasured:
+            print("NOT CHECKED (no answer came back): %s"
+                  % ", ".join(unmeasured))
+            print("  Re-run `dosctl verify` -- these were deployed, but the")
+            print("  box's reply was lost, so they are unproven either way.")
         if bad and not mismatched:
             print("  ...so the %d failed send(s) were harmless: the box already"
                   % bad)
@@ -681,13 +813,26 @@ def upgrade_agent(args, tail, dry, force):
         "kind": "pull", "path": r"C:\AI\AI.BAT", "timeout": args.timeout,
     })
     res = api(args.server, "/result/%s" % j["id"], timeout=args.timeout + 30)
-    cur_srv = cur_up = None
+    cur_srv = cur_up = cur_box = None
     if res.get("blob_b64"):
         cur_text = base64.b64decode(res["blob_b64"]).decode("cp437", "replace")
         cur_srv, cur_up = agent_addresses(cur_text)
+        cur_box = agent_boxid(cur_text)
 
-    print("  running : SRV=%s  UPHOST=%s" % (cur_srv, cur_up))
-    print("  new     : SRV=%s  UPHOST=%s" % (new_srv, new_up))
+    want_box = current_box()
+    print("  running : SRV=%s  UPHOST=%s  BOXID=%s"
+          % (cur_srv, cur_up, cur_box or "(none)"))
+    print("  new     : SRV=%s  UPHOST=%s  BOXID=%s"
+          % (new_srv, new_up, want_box or "(none)"))
+    # Changing an id that is already set is a different act from setting one
+    # for the first time: it renames a machine dosd is already routing to,
+    # and the jobs queued for the old name then go nowhere.
+    if cur_box and want_box and cur_box != want_box and not force:
+        die("this box calls itself %s and boxes.json says it should be %s.\n"
+            "      Renaming it means dosd routes to the new name while any\n"
+            "      job queued under the old one waits for a machine that no\n"
+            "      longer answers to it. Fix boxes.json, or pass --force if\n"
+            "      the rename is what you want." % (cur_box, want_box))
     # A pull that failed leaves cur_srv None, and "None" must not read as
     # "checked and fine". This guard exists to stop the one mistake that
     # needs hands on the keyboard, so losing it silently to a dropped
@@ -723,6 +868,19 @@ def upgrade_agent(args, tail, dry, force):
     os.makedirs(staged, exist_ok=True)
     tmp = os.path.join(staged, "AI.BAT")
     body = new_text.replace("\r\n", "\n").rstrip("\n") + "\n"
+    # Stamp THIS machine's identity into the copy being deployed. One
+    # template, one registry, and the per-box fact written in at the last
+    # possible moment -- see set_agent_boxid().
+    if want_box:
+        body, how = set_agent_boxid(body, want_box)
+        if how == "absent":
+            sys.stderr.write(
+                "dosctl: WARNING -- %s has no SET BOXID= line, so this box\n"
+                "        will keep polling under the bare name. That still\n"
+                "        works (dosd routes it by address), but the declared\n"
+                "        identity cross-check is lost.\n" % src)
+        else:
+            print("stamped BOXID=%s into the agent being deployed" % want_box)
     # The dev copy already ends with the marker (it is a whole agent file, not
     # a fragment), so only add one when it is missing -- otherwise every round
     # trip through pull-and-redeploy grows another.
@@ -754,7 +912,40 @@ def upgrade_agent(args, tail, dry, force):
     print("agent upgraded and the box is polling again.")
     return 0
 
-def api(server, path, payload=None, timeout=300):
+# Which machine this call means.
+#
+# Thread-local, not a plain global, because `--box all` runs the same command
+# against every box CONCURRENTLY -- one thread each -- and a global would let
+# two fan-out workers overwrite each other's target. That failure would be
+# silent and would produce exactly the wrong-box result this design exists to
+# make impossible.
+#
+# Injected in api() rather than threaded through thirty call sites. Every one
+# of them already carries args.server the same way, and the alternative is a
+# second thing to remember in each new command -- which is precisely how
+# --quiet once fell through into the DOS command tail.
+_target = threading.local()
+
+
+def set_box(box):
+    _target.box = box
+
+
+def current_box():
+    return getattr(_target, "box", None)
+
+
+def api(server, path, payload=None, timeout=300, soft=False):
+    """`soft` returns None instead of dying when dosd is not there.
+
+    Only for commands that are still useful without it -- `dosctl boxes`
+    answers "what machines are registered", which is a question about a
+    config file and should not depend on a daemon being up.
+    """
+    if path == "/queue" and isinstance(payload, dict) and "box" not in payload:
+        box = current_box()
+        if box:
+            payload = dict(payload, box=box)
     url = "http://%s%s" % (server, path)
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(
@@ -775,6 +966,8 @@ def api(server, path, payload=None, timeout=300):
             msg = ""
         die(msg or "server returned HTTP %s for %s" % (e.code, path))
     except urllib.error.URLError as e:
+        if soft:
+            return None
         die("cannot reach dosd at %s (%s).\n"
             "      Is 'python dosd.py' running?" % (server, e))
 
@@ -945,6 +1138,175 @@ def await_result(server, job_id, timeout, cmds=None):
     return rc
 
 
+# ---------------------------------------------------------------------------
+# Fan-out: the same job on every machine at once
+#
+# This is the reason the rest of it is worth building. CLAUDE.md already
+# REQUIRES that everything in starter/ runs on both machines -- "gate a
+# faster path at run time, never at compile time" -- and until now that
+# requirement was enforced by a human swapping an SD card and remembering.
+#
+# Both faults the 386 ever found (FPC's runtime hooking INT 10h, and
+# CH375Camera counting packets where it should have measured time) were found
+# by moving machines and noticing a difference. Surfacing that difference
+# automatically is the highest-value thing here.
+#
+# Dispatch is parallel -- different addresses, independent queues, and dosd is
+# already threaded. Within a box, jobs stay strictly serialised for free,
+# because the queue is drained by a machine that polls, CALLs one JOB.BAT, and
+# only then polls again.
+# ---------------------------------------------------------------------------
+
+def fan_out(server, box_ids, make_payload, timeout):
+    """Run one job per box concurrently. {box: {"rc":..,"output":..}}.
+
+    Nothing prints from inside a worker: two machines writing to one console
+    interleave, and the whole value of this is being able to READ the
+    difference between them.
+    """
+    results, lock = {}, threading.Lock()
+
+    def worker(box):
+        set_box(box)
+        row = {"rc": None, "output": "", "error": None}
+        try:
+            job = api(server, "/queue", make_payload(box))
+            res = api(server, "/result/%s" % job["id"], timeout=timeout + 30)
+            if res.get("error"):
+                row["error"] = res["error"]
+            else:
+                out, missing = split_noexec(res.get("output"))
+                row["output"] = out or ""
+                row["rc"] = res.get("rc")
+                if missing:
+                    row["error"] = ("not on this box: %s"
+                                    % ", ".join(missing))
+                    if not row["rc"]:
+                        row["rc"] = RC_NOEXEC
+        except SystemExit as e:           # die() inside api()
+            row["error"] = "dosctl: %s" % e
+        with lock:
+            results[box] = row
+
+    threads = [threading.Thread(target=worker, args=(b,), daemon=True)
+               for b in box_ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        # Generous: the per-job timeout is enforced by dosd, and a worker
+        # that outlives it is a bug worth seeing rather than hiding behind
+        # a join that gives up first.
+        t.join(timeout + 120)
+    return results
+
+
+def first_difference(a, b):
+    """1-based line number where two outputs first differ, or None."""
+    la, lb = a.splitlines(), b.splitlines()
+    for i in range(max(len(la), len(lb))):
+        if (la[i] if i < len(la) else None) != (lb[i] if i < len(lb) else None):
+            return i + 1
+    return None
+
+
+def report_fanout(results, box_ids, label):
+    """The table, then the diff. Returns the exit code for the whole run.
+
+    Not two logs end to end: a column per machine, so the eye lands on the
+    row that differs. Which machine ran it is the single most important fact
+    about any result these boxes produce, so it heads every column.
+    """
+    # A worker that died without recording anything must not take the whole
+    # report down with a KeyError -- the missing answer IS the finding.
+    for b in box_ids:
+        results.setdefault(b, {"rc": None, "output": "",
+                               "error": "no answer from this box"})
+    w = max(12, max(len(b) for b in box_ids) + 2)
+    print()
+    print("%-14s%s" % ("", "".join("%-*s" % (w, b) for b in box_ids)))
+    print("%-14s%s" % ("rc", "".join(
+        "%-*s" % (w, "ERR" if results[b].get("error")
+                  else results[b].get("rc")) for b in box_ids)))
+    print("%-14s%s" % ("lines out", "".join(
+        "%-*d" % (w, len((results[b].get("output") or "").splitlines()))
+        for b in box_ids)))
+
+    for b in box_ids:
+        if results[b].get("error"):
+            print("  %-10s %s" % (b, results[b]["error"]))
+
+    # Every output, in full, under the table. A one-line summary of a
+    # difference is not enough to act on and the whole point is comparison.
+    for b in box_ids:
+        out = (results[b].get("output") or "").rstrip("\n")
+        print()
+        print("--- %s : %s ---" % (b, label))
+        print(out if out else "(no output)")
+
+    base = box_ids[0]
+    same = True
+    for b in box_ids[1:]:
+        d = first_difference(results[base].get("output") or "",
+                             results[b].get("output") or "")
+        if d is not None:
+            same = False
+            print()
+            print("--- %s and %s first differ at line %d ---" % (base, b, d))
+    rcs = {b: results[b].get("rc") for b in box_ids}
+    if same and len(set(rcs.values())) == 1:
+        print()
+        print("identical on %s" % ", ".join(box_ids))
+
+    # Non-zero if ANY box failed. A fan-out that reports success because one
+    # machine was happy is worse than not running it.
+    bad = [b for b in box_ids
+           if results[b].get("error") or (results[b].get("rc") or 0) != 0]
+    return 1 if bad else 0
+
+
+def status_board(st, server):
+    """Print the per-box liveness table, or the single-box line."""
+    per = st.get("boxes") or {}
+    if not st.get("multibox") or len(per) <= 1:
+        # Unchanged wording. This is what every note in CLAUDE.md quotes,
+        # and what people grep for.
+        age = st.get("last_poll_secs_ago")
+        if age is None:
+            print("DOS box: never seen. Check AUTOEXEC.BAT and the firewall.")
+        elif age < 20:
+            print("DOS box: alive, polled %.1fs ago" % age)
+        else:
+            print("DOS box: STALE, last poll %.0fs ago (hung? powered off?)"
+                  % age)
+        return
+
+    # One box being down must not read as the whole bridge being down, so
+    # every machine gets its own row and its own verdict.
+    print("%-8s %-15s %-26s %s" % ("box", "address", "state", "queue"))
+    for b in sorted(per):
+        row = per[b]
+        age = row.get("last_poll_secs_ago")
+        if age is None:
+            state = "never seen"
+        elif age < 20:
+            state = "alive, polled %.1fs ago" % age
+        else:
+            state = "STALE, %.0fs ago" % age
+        note = ""
+        if row.get("busy"):
+            note = "busy: %s" % row["busy"]
+        elif row.get("queued"):
+            note = "%d queued" % row["queued"]
+        if not row.get("registered"):
+            note = (note + "  ") if note else ""
+            note += "NOT in boxes.json"
+        print("%-8s %-15s %-26s %s"
+              % (b, row.get("ip") or "-", state, note))
+    for b in sorted(per):
+        if per[b].get("desc"):
+            print("  %-6s %s" % (b, per[b]["desc"]))
+
+
 def main():
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("cmd", nargs="?")
@@ -953,6 +1315,14 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--device", default=None)
     ap.add_argument("--project", default=None)
+    ap.add_argument("--box", default=None)
+    # NOTE: --all is deliberately NOT a parser flag. The tail splitter below
+    # derives its flag list from this parser, so registering --all here would
+    # lift it out of the command tail -- and `clean --all` reads it FROM the
+    # tail. That is the same trap --quiet fell into, in reverse: there, a
+    # flag missing from the list fell through to the DOS box; here, a flag
+    # added to it would be stolen from the command that already owns it.
+    # `verify --all` reads the tail for the same reason.
     ap.add_argument("--timeout", type=float, default=120)
     ap.add_argument("--quiet", action="store_true",
                     help="do not dump this job's output on the DOS console")
@@ -994,6 +1364,78 @@ def main():
         print(__doc__)
         return 0
 
+    # Which machine, decided once, for everything below. api() carries it on
+    # to dosd from here -- see set_box().
+    try:
+        reg = boxreg.load()
+        want = args.box
+        if want is None and "--all" in tail and args.cmd in ("verify", "run",
+                                                             "exec", "status"):
+            want = "all"
+        box, how = boxreg.resolve(want)
+    except boxreg.BoxError as e:
+        die(str(e))
+    all_ids = sorted(reg["boxes"]) if reg else []
+    fan = (box == "all")
+    set_box(None if fan else box)
+
+    if args.cmd == "boxes":
+        if not reg:
+            print("No boxes.json -- this bridge talks to one DOS machine.")
+            print()
+            print("  A registry is only needed for more than one. To add")
+            print("  it, copy boxes.example.json to boxes.json and list")
+            print("  your machines there.")
+            return 0
+        st = api(args.server, "/status", soft=True) or {}
+        per = st.get("boxes") or {}
+        print("%-8s %-15s %-22s %s" % ("box", "address", "state", "what"))
+        for b in all_ids:
+            age = (per.get(b) or {}).get("last_poll_secs_ago")
+            state = ("never seen" if age is None else
+                     "alive, %.0fs ago" % age if age < 20 else
+                     "STALE, %.0fs ago" % age)
+            marks = []
+            if b == reg["default"]:
+                marks.append("default")
+            if boxreg.overrides(b, "capture", reg) is not None:
+                marks.append("capture")
+            if boxreg.overrides(b, "power", reg) is not None:
+                marks.append("plug")
+            print("%-8s %-15s %-22s %s"
+                  % (b, boxreg.ip_of(b, reg), state,
+                     boxreg.desc_of(b, reg)))
+            if marks:
+                print("%-8s %-15s %-22s %s" % ("", "", "", ", ".join(marks)))
+        print()
+        print("this command would target: %s%s"
+              % (box, "  (%s)" % how if how else ""))
+        if not st:
+            print("(dosd is not running, so no liveness is shown)")
+        return 0
+
+    # `--box all` only means something for commands that can be compared.
+    # Anything else must refuse rather than quietly running on the default:
+    # a `dosctl stop --box all` that stopped one machine and reported
+    # nothing about the other is exactly the wrong-box result this is
+    # arranged to prevent.
+    FANNABLE = ("run", "exec", "verify", "status", "boxes")
+    if fan and args.cmd not in FANNABLE:
+        die("--box all works for %s, not for %s. Say which machine."
+            % (", ".join(FANNABLE), args.cmd))
+
+    # The two commands whose mistake needs hands on a keyboard to undo.
+    # Both refuse a default: you have to say which machine out loud.
+    if len(all_ids) > 1 and not (args.box or os.environ.get("DOSBOX")):
+        one_way = (args.cmd == "stop"
+                   or (args.cmd == "power" and tail and tail[0].lower()
+                       in ("cycle", "off")))
+        if one_way:
+            die("%s needs --box said out loud when there is more than one\n"
+                "      machine (%s). Cutting power to, or stopping the agent\n"
+                "      on, the wrong box is undone with hands on a keyboard."
+                % (args.cmd, ", ".join(all_ids)))
+
     if args.cmd == "verify":
         build = os.path.join(HERE, "starter", "build")
         if not os.path.isdir(build):
@@ -1005,7 +1447,66 @@ def main():
         print("CRC-32 checking %d tool(s) in %s against starter/build."
               % (len(names), TOOLS_DIR_DOS))
         print("HD reads every byte on an 8086, so give it a minute.")
-        checked, mismatched = verify_tools(args, names, build)
+
+        if fan:
+            # The drift alarm. Both machines are supposed to run ONE
+            # identical C:\TOOLS -- one binary, gated at run time -- and
+            # that property used to be free because there was one SD card.
+            # With two it has to be checked, as routine rather than as a
+            # special occasion.
+            print("checking %s" % ", ".join(all_ids))
+            rows, lock = {}, threading.Lock()
+
+            def check(b):
+                set_box(b)
+                try:
+                    got = verify_tools(args, names, build)
+                except SystemExit as e:          # die() inside api()
+                    got = ("ERR", str(e), [])
+                with lock:
+                    rows[b] = got
+
+            ts = [threading.Thread(target=check, args=(b,), daemon=True)
+                  for b in all_ids]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(args.timeout + 240)
+
+            rc = 0
+            for b in all_ids:
+                got = rows.get(b)
+                print()
+                if got is None:
+                    print("%-8s no answer" % b)
+                    rc = 1
+                    continue
+                checked, mismatched, unmeasured = got
+                if checked == "ERR":
+                    print("%-8s %s" % (b, mismatched))
+                    rc = 1
+                elif checked is None:
+                    print("%-8s no HD.EXE on the box -- cannot verify" % b)
+                    rc = 1
+                else:
+                    print("%-8s %d checked, %d match, %d differ"
+                          % (b, checked, checked - len(mismatched),
+                             len(mismatched)))
+                    for name, wantc, gotc in mismatched:
+                        print("         %-14s local %s  box %s"
+                              % (name, wantc, gotc))
+                    # Unproven, not passed. A drift alarm that stays quiet
+                    # about the files it could not read is worse than one
+                    # that says so, because the silence reads as a pass.
+                    if unmeasured:
+                        print("         NOT CHECKED (no reply): %s"
+                              % ", ".join(unmeasured))
+                        rc = 1
+                    if mismatched:
+                        rc = 1
+            return rc
+
+        checked, mismatched, unmeasured = verify_tools(args, names, build)
         if checked is None:
             die("%s\\HD.EXE is not on the box -- cannot verify" % TOOLS_DIR_DOS)
         for name, want, got in mismatched:
@@ -1015,7 +1516,14 @@ def main():
         print()
         print("%d checked, %d match, %d differ"
               % (checked, checked - len(mismatched), len(mismatched)))
-        return 1 if mismatched else 0
+        # A file nobody could read is not a file that passed. Reported
+        # separately and counted as a failure, because the whole value of
+        # this command is that a clean run means something.
+        if unmeasured:
+            print("%d NOT CHECKED -- no reply came back for: %s"
+                  % (len(unmeasured), ", ".join(unmeasured)))
+            print("Re-run to settle them; they are unproven, not wrong.")
+        return 1 if (mismatched or unmeasured) else 0
 
     if args.cmd == "shutdown":
         # Not api(): dosd answers this in plain text, because a daemon on its
@@ -1053,6 +1561,20 @@ def main():
             import power
         except ImportError:
             die("power.py is missing from %s" % HERE)
+
+        # A plug that is not this box's must not answer for it. Cutting
+        # power to the wrong machine is item 6 on the risk list in
+        # docs/multibox.md and the only recovery is a person standing in
+        # front of it.
+        pov = boxreg.overrides(box, "power", reg) if reg else {}
+        if reg and pov is None:
+            die("no smart plug is configured for %s.\n"
+                "      %s has one; this box does not, and falling back to it\n"
+                "      would cut power to the wrong machine."
+                % (box, ", ".join(b for b in all_ids
+                                  if boxreg.overrides(b, "power", reg)
+                                  is not None) or "another box"))
+        power.set_scope(box if reg else None, pov or {})
         # `tail`, not args.rest: the parser only ever sees the first
         # passthru word (it becomes args.cmd), so args.rest is always empty
         # here and every action silently read as "status".
@@ -1139,6 +1661,28 @@ def main():
             import capture
         except ImportError:
             die("capture.py is missing from %s" % HERE)
+
+        # THE WRONG-SCREEN GUARD, and it is the important one.
+        #
+        # Every visual verification in this project's history would have
+        # been reasoned about confidently and wrongly if the picture had
+        # come from the other machine: the magenta screen, the see-through
+        # cars, the sun centroid at +4.5 then -3.4. A capture that silently
+        # shows the wrong box does not produce a wrong answer, it produces
+        # a CONVINCING one -- so with no device for this box, refuse.
+        cov = boxreg.overrides(box, "capture", reg) if reg else {}
+        has = [b for b in all_ids
+               if boxreg.overrides(b, "capture", reg) is not None]
+        # `devices` is exempt: it enumerates this PC's hardware and is what
+        # you run in order to write the config in the first place, so it
+        # cannot require a box that is already configured.
+        asked = tail[0].lower() if tail else "status"
+        if reg and cov is None and asked != "devices":
+            die("no capture device is configured for %s.\n"
+                "      %s has one. Showing you that screen instead would be\n"
+                "      worse than showing you nothing."
+                % (box, ", ".join(has) if has else "No box"))
+        capture.set_scope(box if reg else None, cov or {})
 
         # `tail`, not args.rest -- same trap the power block documents above.
         words = [t for t in tail if not t.startswith("-")]
@@ -1327,16 +1871,20 @@ def main():
 
     if args.cmd == "status":
         st = api(args.server, "/status")
-        age = st.get("last_poll_secs_ago")
-        if age is None:
-            print("DOS box: never seen. Check AUTOEXEC.BAT and the firewall.")
-        elif age < 20:
-            print("DOS box: alive, polled %.1fs ago" % age)
-        else:
-            print("DOS box: STALE, last poll %.0fs ago (hung? powered off?)" % age)
+        status_board(st, args.server)
         for ev in st.get("boot_events", []):
-            print("  boot event: %s" % ev["event"])
-        print("staged files: %s" % (", ".join(st.get("files", [])) or "(none)"))
+            print("  boot event: %s%s"
+                  % (("[%s] " % ev["box"]) if ev.get("box")
+                     and st.get("multibox") else "", ev["event"]))
+        # A count, not the list. This tree stages well over two hundred
+        # files and the roll call buried the two lines that answer the
+        # question status is asked: is the box alive, and did it boot
+        # cleanly. `--files` still prints them.
+        files = st.get("files", [])
+        if "--files" in tail:
+            print("staged files: %s" % (", ".join(files) or "(none)"))
+        else:
+            print("staged files: %d  (--files to list them)" % len(files))
         return 0
 
     if args.cmd == "reboot":
@@ -1380,7 +1928,7 @@ def main():
         t0 = time.time()
         while time.time() - t0 < 90:
             time.sleep(3)
-            age = api(args.server, "/status").get("last_poll_secs_ago")
+            age = poll_age(api(args.server, "/status"))
             if age is not None and age > 25:
                 print("agent stopped after %.0fs -- the box is idle at a prompt"
                       % (time.time() - t0))
@@ -1527,9 +2075,23 @@ def main():
         name = (stage([tail[0]], args.project)[0] if os.path.isfile(tail[0])
                 else resolve_staged(tail[0].upper()))
         payload = {
-            "kind": "run", "name": name, "args": " ".join(tail[1:]),
+            "kind": "run", "name": name,
+            # --all is ours, not the DOS program's. Without this it would be
+            # passed through as an argument to whatever is being run, which
+            # is the exact shape of the --quiet bug this file already
+            # carries a note about.
+            "args": " ".join(t for t in tail[1:] if t != "--all"),
             "timeout": args.timeout, "reboot": args.reboot, "cold": args.cold,
         }
+        if fan:
+            # Staging is deliberately NOT namespaced by box: the same binary
+            # running on both machines is the entire point, and a box
+            # dimension in files/ would make the comparison meaningless by
+            # construction.
+            print("running %s on %s" % (name, ", ".join(all_ids)))
+            res = fan_out(args.server, all_ids,
+                          lambda b: dict(payload), args.timeout)
+            return report_fanout(res, all_ids, "run " + name)
         # Send this key ONLY to turn the echo off. Sending it on every job
         # pinned the server to an explicit value, and dosd consults its own
         # default only when the job does not carry one -- so
@@ -1593,7 +2155,14 @@ def main():
             })
             return 0 if wait_for_box(args.server, "reboot sent") else 124
 
-        payload = {"kind": "raw", "cmds": tail, "timeout": args.timeout}
+        cmds = [t for t in tail if t != "--all"]
+        payload = {"kind": "raw", "cmds": cmds, "timeout": args.timeout}
+        if fan:
+            print("running %d command(s) on %s"
+                  % (len(cmds), ", ".join(all_ids)))
+            res = fan_out(args.server, all_ids,
+                          lambda b: dict(payload), args.timeout)
+            return report_fanout(res, all_ids, "exec")
         # Send this key ONLY to turn the echo off. Sending it on every job
         # pinned the server to an explicit value, and dosd consults its own
         # default only when the job does not carry one -- so

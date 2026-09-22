@@ -14,13 +14,91 @@ for the plain 8086 so it runs on any DOS box; where a faster part can do
 better, the fast path is selected at run time via `Has186` in `starter/cpu.pas`.
 The specifics below describe *this* machine, not a requirement.
 
-Hardware: NEC V30, MS-DOS 6.22, PicoMEM 1.14 card providing WiFi. About 514 KB
-free heap.
+**Two DOS machines have been used, one at a time**, and the bridge does not
+care which is on the end of it:
+
+| | |
+|---|---|
+| the original | **NEC V30**, MS-DOS 6.22, **an 8087 fitted**, VBE video with 1 MB. About 514 KB free heap. **Sits beside the router** |
+| the second | **Gateway 2000 386SX/25**, MS-DOS 6.22, no 387. 515 KB free, BIOS of 03/25/92, VGA colour. **Is DOWNSTAIRS, on a noticeably weaker link** |
+
+**Where the machines physically are is bridge configuration, not trivia.**
+The 386SX's distance from the AP is why it loses whole job RESULTS while the
+V30 never does -- a large payload on a weak link -- and on 2026-09-21 that
+asymmetry was measured carefully and then attributed to the wrong thing: the
+two boxes differ in CPU, PicoMEM model and card firmware date all at once, so
+the older card on the older firmware looked causal. It was not. Nobody needed
+to swap a card or flash anything. **Ask where a machine is before blaming
+what is plugged into it.** `docs/network.md` has the measurements and the
+mitigation, which is to make the jobs smaller rather than retry the big ones.
+
+**The PicoMEM card is not a property of the machine.** Both boxes boot from
+one and reach the network through it, and the cards get swapped between
+them -- so which card is in which box is a fact with a date on it, not a
+fixture. **Both cards were read off their ROMs on 2026-09-21:**
+
+| | card | BIOS date | board id |
+|---|---|---|---|
+| V30 | **PicoMEM 2** | 2026-06-16 | 11, parameter area at +886 |
+| 386SX | **PicoMEM 1** | 2025-11-02 | not reported (all three bytes 0), parameter area at +374 |
+
+**Identify the card with `CH375USB/PicoMEM/bin/PMINFO.EXE`, which reads the
+BIOS date out of the ROM, rather than inferring it from the machine.** This
+table has now been wrong twice in the other direction. It once claimed the
+V30 had a "PicoMEM 1.14", which was never checked; it then said "as of
+2026-09-20 the 386SX holds the PicoMEM 2", and on 2026-09-21 the cards were
+the other way round -- so a session read that line, repeated it, and built a
+hypothesis about a transport fault on top of it before running `PMINFO`. The
+date stamp is not decoration: **a dated claim about which card is where is
+evidence that it was true once, and nothing more.** One command settles it.
+
+**The 386SX's card is a firmware release behind, and that is a footnote
+rather than a lead.** The newest PicoMEM 1 WiFi build is
+`PM_W_11_16_25.uf2`, 16 Nov 2025, from `firmware/` in
+https://github.com/FreddyVRetro/ISA-PicoMEM (PicoMEM 2 builds live in
+`firmware/PicoMEM2/`). `PMINFO` reports "firmware: revision not reported; go
+by the BIOS date", so the ROM date is a proxy for the build, not the build
+number.
+
+It is listed here for completeness, **not** as the explanation for anything:
+that box's transfer losses are its distance from the router, per the table
+above. Updating needs MicroUSB and the BOOTSEL button -- it cannot be done
+over the bridge -- and **the card is the boot disk**, so read the PicoMEM
+README first and have a reason better than "it was behind".
+
+**There is only ONE SD card**, and it moves between the two PicoMEM cards.
+So the boot disk is the same disk whichever card is in the machine: one
+`C:\TOOLS`, one `C:\AI`, no drift and nothing to re-sync after a swap. The
+disk images live on that card, so a swap does move the boot disk physically
+-- it just moves the *same* one.
+
+The 386SX is four to five times the V30 on every `BENCH` row (`docs/hardware.md`
+has the table) and it found two faults the V30 never could: FPC's runtime
+hooking INT 10h, and CH375Camera counting packets where it should have
+measured time. Anything written here must run on both -- gate a faster path
+at run time, never at compile time.
 
 | | |
 |---|---|
 | Windows box | runs `dosd.py` on ports 8080/8081/8082, plus UDP 8069 |
 | DOS box | polls for jobs at a static address; see below |
+
+**BOTH MACHINES ARE NOW ON THE BRIDGE AT ONCE.** There are two SD cards, so
+the "one at a time" above is history: `boxes.json` registers the V30 and the
+386SX at their own addresses and one `dosd` serves both. Every command takes
+`--box ID`, and `--box all` runs it on both and prints the answers side by
+side. With no `boxes.json` nothing changes and the bridge talks to one
+machine exactly as before. **`docs/multibox.md` Part 1 is the operating
+manual** -- how a poll finds its box, what is per box and what must never
+be, and the step-by-step for adding a second machine.
+
+**Which box a command means is never guessed.** `--box ID`, then `$DOSBOX`,
+then a `.dosbox` file at or above the working directory, then `default` in
+`boxes.json`, then the sole registered box -- and ambiguity is a hard error
+listing the candidates. A job that silently picks a machine comes back
+looking entirely correct, having run on the wrong CPU, and nothing in the
+output says so. `dospower cycle` and `dosctl stop` refuse a default outright
+and make you name the machine.
 
 **Every IP address and MAC in this file is an illustrative placeholder.** They
 are written as `192.168.1.x` and `AA:BB:CC:...` so a transcript reads sensibly,
@@ -46,9 +124,12 @@ its own long history lives beside it:
 | `docs/input.md` | `KINJ`, `KNET`, mouse injection, the Mouse Systems protocol |
 | `docs/network.md` | packet driver, our own IPv4/UDP, TFTP, every transport fault. **The mid-transfer stall is solved: the box did not answer ARP.** Read that section before touching the transport |
 | `docs/agent.md` | `AI.BAT`: upgrading it, stopping it, every way it has gone quiet |
+| `docs/multibox.md` | **BUILT 2026-09-21.** Two or more DOS boxes on one bridge. **Part 1 is the operating manual** -- how a poll finds its box, what is per box and what must never be, and a step-by-step setup for a second machine. Part 2 is the design record. Read Part 1 before adding a box or debugging one |
 | `capture.md` | running the capture card: live preview, stills, recording |
 | `knet.md` | the live remote keyboard, and its four hazards |
 | `starter/SCROLLER.md` | the mode X scroller |
+| `starter/PARALLAX.md` | NEON DRIFT: real per-row parallax off the CRTC line compare, and the five bugs that looked like something else |
+| `CH375.md` | the CH375 USB work: what came out of it and where it went |
 | `README.md` | setup, and the failure modes worth knowing |
 
 **Nothing was deleted in the split** -- every measurement, dead hypothesis and
@@ -148,6 +229,20 @@ version is now `dos/AUTOEXEC.proposed.bat`; it is what would put
 Symptom to recognise: the box stops polling and never comes back on its own,
 while `dosd` is plainly still listening on 8080/8081/8082. Check with `netstat`
 before assuming the daemon died — the failure looks identical from the CLI.
+
+**This section is about the V30. The 386SX CANNOT be fixed the same way --
+its BIOS will not accept a date past 2010.** So that machine stamps every
+file it writes somewhere around 2010, and **that is expected rather than a
+fault to chase.** Do not run the `SNTP -set` below on it hoping to correct
+it; the BIOS setup will not take the year, so anything DOS manages to write
+to the RTC is at best good until the next cold boot.
+
+Two practical consequences. **Never compare file dates between the two
+machines** -- one is roughly right and the other is sixteen years out, so a
+side-by-side `DIR` makes the 386SX's files look ancient regardless of when
+they were written. Nothing in the bridge depends on this: `upgrade --tools`
+compares sizes, `verify` compares CRC-32, and neither reads a date. It only
+misleads a human reading a listing.
 
 **The clock was two years slow, and is now right.** Every file the box created
 was stamped 2024 while the world was in 2026 -- month, day, hour and minute all
@@ -267,11 +362,33 @@ dosctl status
 `DOS box: alive, polled <10s ago` is healthy. "STALE" or "never seen" means the
 DOS box is off, hung, or the firewall is blocking 8080/8081/8082.
 
+**The firewall really does block it, and it looks nothing like a firewall.**
+On 2026-09-21 both machines went silent at once and stayed silent through a
+reboot, a power cycle and a daemon restart. Neither was broken: this PC's LAN
+interface is on the **Private** profile, the only inbound Allow rules for
+`python.exe` were scoped to **Public**, and the default inbound action is
+block -- so every poll was dropped before `dosd` ever saw it. `netstat`
+showed the daemon bound to `0.0.0.0:8069` throughout, and both boxes' screens
+showed a healthy agent banner. Run `dosfirewall.cmd` as Administrator; it
+adds port-scoped rules limited to the boxes' own subnet.
+
+Two things from that hunt are general:
+
+* **Two machines failing identically at the same moment means look at what
+  they share**, and what they share is this host. It is the same lesson as
+  running mTCP as an independent control, arriving from the other direction.
+* **`ping` proves nothing here** -- nothing on the DOS side answers ICMP.
+  Send a UDP datagram to the box to force this host to ARP for it, then read
+  `netsh interface ipv4 show neighbors`. `Reachable` means the box's own
+  stack answered, which separates "the machine is dead" from "the machine is
+  talking and we are not listening". `arp -a` cannot express that and is
+  what caused the earlier misdiagnosis this file already records.
+
 ## Commands
 
 ```
 dosnew NAME                   scaffold projects/NAME/ for a new project
-makeinst                      rebuild C:\DosBridgeInstaller (bumps the build number)
+makeinst                      rebuild C:\dosbridgeDEVInstaller (bumps the build number)
 makeinst --no-bump            ...without advancing it, for test builds
 dosctl clean [--all]          delete regenerable build junk (--all: EXEs too)
 dosrun PROG.EXE [args]        push, run on the DOS box, capture stdout, return errorlevel
@@ -292,8 +409,14 @@ dosctl upgrade --agent        only C:\AI\AI.BAT (swaps, then reboots)
 dosctl upgrade --dry-run      say what would change, touch nothing
 dosctl version                what build the DOS machine is running
 dosctl verify                 CRC-32 every tool on the box against the build
-dosctl status                 liveness check
+dosctl status                 liveness check -- a row per box
+dosctl boxes                  which DOS machines this bridge knows
 dosctl shutdown               stop dosd itself (from this machine only)
+--box ID                      which machine. --box all where it can compare
+                              (run, exec, verify). REQUIRED, not defaulted,
+                              for `stop` and `power cycle`
+dosfirewall.cmd               let the boxes reach dosd through Windows
+                              Firewall. Needs Administrator; see below
 dospower [status|on|off|cycle]  smart plug, if one is configured
 doscap [devices|modes|status]   video capture, if a card is configured
 doscap live [--mute]            watch the box live, WITH SOUND (q to quit)
@@ -308,8 +431,9 @@ doscap still REC SECS           pull one frame out of a recording
 **`starter/` is reserved** for the bridge's own tools and worked examples; it is
 copied into the installer kits. Anything else belongs in **`projects/NAME/`**,
 created with `dosnew NAME`. Never author anything under
-`C:\DosBridgeInstaller\` — that whole tree is a build artifact, overwritten
-wholesale by `makeinst.cmd`.
+`C:\dosbridgeDEVInstaller\` — everything below its `.git` is a build
+artifact, overwritten wholesale by `makeinst.cmd`. See **Cutting a public
+release** below for what that folder is.
 
 Staging is namespaced by project, because `files/` used to be one flat
 directory keyed on the filename: two projects that both built a `HELLO.EXE`
@@ -368,6 +492,74 @@ never a gap in the sequence. Numbers are free; ambiguity is not.
 as iterating on the packaging scripts themselves. If the artifact could end up
 on another machine, let it increment.
 
+### Cutting a public release
+
+`C:\dosbridgeDEVInstaller` is **a checkout of the public repo**,
+https://github.com/jdredd87/DOSBridge, and not merely a build output. The
+release is: build into that checkout, read the diff, commit, push. The
+default output path is derived from the source folder's name -- `C:\dosbridgeDEV`
+gives `C:\dosbridgeDEVInstaller` -- so a bare `makeinst` lands in the right
+place and nothing needs `--out`.
+
+```
+git status                        the dev tree must be clean first
+makeinst --server 192.168.1.10 --ip 192.168.1.20
+cd C:\dosbridgeDEVInstaller
+git add -A  &&  git status        READ THIS. See below
+git commit  &&  git push
+```
+
+**Those two addresses are not optional.** With nothing on the command line
+`makekit` auto-detects this PC's LAN address and bakes the real pair into
+`client\AI.BAT`, `NET.CFG`, `MTCP.NEW` and `README.TXT` -- which is correct
+for a kit you are carrying to your own DOS box and wrong for one going on
+the internet. `192.168.1.10` (server) and `192.168.1.20` (DOS box) are the
+documented placeholders, the same pair every example in these files uses.
+Build 61 had this machine's real subnet in it and was never published;
+grep the output for your own addresses before pushing, because nothing in
+the build will tell you.
+
+**Read `git status` in the checkout before committing.** Many files will
+show as modified with an empty `git diff`: the repo stores CRLF, the build
+writes LF, and `git add` normalises them away. What survives staging is the
+real change, and it should be a short list you can account for. A build that
+touches a file you did not expect is worth understanding before it ships.
+
+Two things that are NOT verified by building:
+
+* **The client kit ships whatever is in `starter\build`,** and nothing checks
+  those binaries against their sources. `PKTCAP.EXE` was six days behind
+  `pktcap.pas` at build 62 and would have shipped a tool that did not do what
+  its own documentation said. Rebuild `starter\` first.
+
+  **This note used to say "everything unchanged comes out byte-identical, so
+  the ones that do change are exactly the ones that were stale", and that is
+  WRONG.** The `About` unit embeds the build date, so a rebuild on a new day
+  changes **every** binary -- 36 of them on 2026-09-22 -- and the signal the
+  sentence promised is buried in 36 false positives. Checked rather than
+  assumed: `hello.exe` differed from its committed copy at **exactly one byte
+  offset**, the `built 2026/09/20` string, same length and same file size.
+
+  So compare the *bytes that are not the date stamp*, or compare sizes and
+  then diff the outliers. A rebuild whose only change is the date stamp
+  proves nothing was stale, which is the answer you wanted -- and shipping
+  that churn is worse than useless, because it also drops every DOS box out
+  of `verify` agreement for a one-byte cosmetic difference. On 2026-09-22 the
+  rebuild was run as a check and then reverted, and the verified binaries
+  shipped.
+
+  Build with `.\build.cmd NAME` from `cmd`: this machine sets
+  `NoDefaultCurrentDirectoryInExePath=1`, so a bare `build.cmd` is "not
+  recognized" and a loop over every target reports all 36 as failures.
+* **`selftest.py` cannot run while `dosd` is up** -- it needs 8069 and
+  8080-8082 -- and stopping the daemon is a one-way door if it is serving the
+  DOS box. `server\check.py` can run any time and reports what is missing
+  from the built kit without touching anything.
+
+Finally, `C:\DOSBridgeInstaller` (no `DEV`) is an older checkout of the same
+public repo, left at build 60. One checkout is enough; if it is still there,
+it is stale by definition.
+
 ### Compilers are not fixed
 
 The bridge only ever needs a path to a `.EXE`, so it does not care what built
@@ -425,7 +617,10 @@ BEEP [ALERT|DONE|f t n]   PC speaker; ALERT is a ~1.5s siren for attention
 IVT [/A] [nn]             interrupt vectors, each attributed to its owner
 VIDCHK                    mono or colour? rc 0=colour 1=mono 2=no BIOS opinion
 PKTDRV [vec]              find the packet driver, report class/type/name.
-                          Read-only: no handle, cannot disturb the link
+                          Read-only: no handle, cannot disturb the link.
+                          rc = the NUMBER of drivers found, so a healthy
+                          box returns 1 -- documented in its own header,
+                          and not a failure however it looks over the bridge
 PKTCAP [secs] [type|ALL] [vec]  capture Ethernet frames. Default 5s of ARP
                           on the first driver found. Opens a handle --
                           read the warning below, and give it a vector
@@ -493,6 +688,16 @@ FRACTAL [INT|FPU] [ZOOM n] [SECS n]   Mandelbrot, both inner loops
 BALLS                     bouncing balls in mode 13h, mono or colour
 MATRIX [seconds]          the falling-green-text screensaver, text mode
 SCROLLER [SECS n] [SPEED n]   mode X scroller, sprites + AdLib. See SCROLLER.md
+PARALLAX [SECS n] [SPEED n] [SWEEP n] [CARS n] [MONO|COLOUR]
+         [NOMUSIC] [NOFPU] [NOPAUSE] [NOSHOT] [PROF]
+                          NEON DRIFT. Mode X split-screen parallax: a CRTC
+                          line compare pins the bottom 36 rows, so the grid
+                          floor is repainted every frame and EVERY ROW gets
+                          its own scroll rate -- the geometry, not an effect.
+                          Two hovercars, OPL2 soundtrack, and the coprocessor
+                          used only if it wins a race against the integer
+                          path. Dumps system and PicoMEM info first.
+                          See PARALLAX.md
 SVGATEXT [text]           rotating text; VBE 640x480x256, else mode 13h
 GTEST                     mode 13h test pattern, deliberately leaves the mode set
 PROFTEST                  exercises the Prof unit's section timing
@@ -517,7 +722,13 @@ loop + increment    88961      procedure call      46501
 32-bit divide        7280      array[] store       68322
 ```
 
-The four coprocessor rows print `no coprocessor, skipped` here; see below.
+**This box has an 8087 fitted**, confirmed 2026-09-20, so the four
+coprocessor rows print rather than skipping: FPU add 71780, multiply 61661,
+divide 34361, sqrt 42460 per second. That is about **five times** the
+software 32-bit routines above -- and it still does not beat the integer
+path in real code, because `FRACTAL`'s Q8 loop is 16-bit `IMUL` and was
+never paying for those routines. Measured: 108 rows against the 8087's 60,
+in the same time. `docs/hardware.md` has the detail.
 
 Two ratios explain nearly every performance problem hit so far:
 
@@ -733,6 +944,26 @@ is one move every eighteen seconds -- a heartbeat slower than the observer's
 patience is not a heartbeat, and it would have failed at the one job it
 exists to do.
 
+**Any program that touches the screen must pull in `VidFix`.** FPC's i8086
+runtime installs a coprocessor-error handler on **INT 10h**, the video BIOS
+vector. On an 8086/V30 with no 8087 its `FNSTSW` reads back zero and the stub
+chains harmlessly; on a **386 with no 387** it reads back with bit 7 set, the
+stub takes its error path, and the first video BIOS call never returns -- the
+machine dies in silence, printing nothing, because the output is still in a
+buffer. That is one box working and another wedging on the same binary.
+
+`starter/vidfix.pas` puts the vector back, and only when it is certain: no
+coprocessor, the vector points inside the running program, the bytes are the
+stub with `FNSTSW`, and the saved address it recovers is in ROM. It is inert
+where nothing is hooked, so one binary suits both machines. `About` pulls it
+in, so every tool with a banner has it; `UGET` and `UPUT` name it explicitly
+because they deliberately print no banner. A fixed EXE contains the string
+`coprocessor, and the stub`.
+
+**Upgrade the transport last.** `dosctl upgrade --tools` deploying tools built
+before that fix took the 386 off the bridge, because `UGET` was among them and
+the agent needs it to poll. Recovery was `HTGET` at the keyboard.
+
 **Avoid SysUtils in Pascal.** `IntToStr` and friends link a lot of dead weight
 into a 16-bit real-mode binary. `Tester.Note` has a `LongInt` overload for this
 reason.
@@ -896,6 +1127,20 @@ not exercise the packet driver or any real hardware — a green selftest means t
 Windows half is sane, nothing more. It needs 8069 and 8080-8082, so stop the
 daemon first (`dosctl shutdown`).
 
+**Its daemon binds LOOPBACK ONLY (`DOSD_BIND=127.0.0.1`), and that is
+load-bearing.** A selftest daemon on `0.0.0.0` is indistinguishable, to a
+real DOS machine polling the LAN, from the one it just replaced. On
+2026-09-21 both live boxes polled a selftest daemon and raced the simulated
+box for its jobs — and step 1 dispatches `run local/PROG.EXE`, where
+`PROG.EXE` is 3600 bytes of generated pattern rather than a program. **A
+real 386SX executed it and had to be recovered by hand.** It had always
+worked this way and had never bitten, because the host firewall was quietly
+dropping every inbound poll; fixing the firewall removed that accidental
+protection and the hazard surfaced the same afternoon. Never take the
+loopback bind off, and if you write another test that starts a daemon, give
+it the same treatment: **a test that can reach production hardware
+eventually will.**
+
 **`simulate_dos.py` speaks the real transport**, and that is the part worth
 protecting. It does actual TFTP against `dosd` — RRQ/WRQ, block numbering, ACKs
 and the `blksize` negotiation — rather than pattern-matching the batch.
@@ -933,7 +1178,7 @@ docs/             the long-form documentation this file used to carry whole.
                   above. Anything learned about a subject goes in its file
 installer-src/    AUTHORED installer scripts only -- install.ps1, check.py,
                   the two makekit.py, makeinst.py. Nothing generated lives
-                  here; the built installer goes to C:\DosBridgeInstaller.
+                  here; the built installer goes to C:\dosbridgeDEVInstaller.
                   buildno.txt is the build counter -- keep it in version
                   control, it is what makes "build 7" mean one thing.
                   The output's README.md is the install steps plus THIS
@@ -943,6 +1188,12 @@ makeinst.cmd      build that installer from the current dev tree
 dos/              files that live on the DOS box. Top level is a TEMPLATE for a
                   fresh install; dos/live/ mirrors THIS box; dos/archive/ is
                   superseded versions. See dos/README.md -- they are different
+boxes.py          the registry of DOS machines, shared by dosd and dosctl.
+                  boxes.json is per machine and never ships, same rule as
+                  power.json and capture.json; boxes.example.json is the
+                  schema. Absent means one box and no behaviour change
+dosfirewall.ps1   adds the inbound rules the boxes need, scoped to their
+                  subnet. dosfirewall.cmd is the shim; both need admin
 files/            dosd's serving root for /f/ fetches; holds staged programs and
                   the EXIT0.COM dosd writes on first run
 projects/         YOUR work: one folder per project, made by `dosnew NAME`.
@@ -952,7 +1203,10 @@ starter/          FPC cross-compile setup, test harness, worked examples.
                   scroller.pas + modex.pas + music.pas live here rather than
                   in projects/ because they ship in the client kit: the
                   scroller is the demo that shows what the machine can do,
-                  and SCROLLER.md is its write-up. kbd.pas is the INT 9
+                  and SCROLLER.md is its write-up. parallax.pas + retro.pas +
+                  pmdet.pas are NEON DRIFT, the split-screen parallax demo,
+                  with PARALLAX.md as its write-up -- it ships for the same
+                  reason the scroller does. kbd.pas is the INT 9
                   key-state unit RAYCAST KEYS uses; mkwalk.py generates the
                   timed-event scripts RAYCAST PLAY reads, and walk.txt is one
                   it made for the default seed. kinj.asm is the resident
@@ -974,6 +1228,50 @@ simulate_dos.py   fake DOS box, used by selftest
 Each directory has its own README with detail. `README.md` at the root covers
 setup and the failure modes worth knowing.
 
+## The other repository this machine builds
+
+Most of the recent work is not in this tree. `C:\CH375USB` is a separate
+collection -- https://github.com/jdredd87/CH375USBTools -- of DOS drivers for a
+WCH CH375 in USB host mode, and **the bridge is how all of it is built and
+tested**: every `build.cmd` in it shells out to `dosctl.py` here, so
+`DOSBRIDGE` must point at this folder and `dosd` must be running for any of
+those projects to be exercised at all.
+
+Ten projects: a USB mouse driver, a keyboard driver, a combined one, probe
+tools, a packet driver for USB Ethernet that reaches the internet, a
+DisplayLink second screen, a USB audio project that measures why playback is
+impossible on this chip, a USB-to-serial link that talks to a real modem,
+`CH375Fossil` -- a FOSSIL driver presenting either that serial link or a TCP
+listener to DOS software as a modem on `INT 14h` -- and `CH375Camera`, colour
+stills from an IBM PC Camera over an isochronous stream the audio work had
+seemed to rule out.
+
+**One more project in that collection is not about the CH375 at all**:
+`PicoMEM` reads the PicoMEM card each DOS machine boots from and reaches the
+network through -- what it is, its configuration, its live memory map, which
+of its emulated devices answer (the 386SX has a working AdLib at 388h and no
+sound card in it), a USB mouse arriving byte by byte, and what reading it
+costs. Twelve tools, all of which run on a PicoMEM 1 and a PicoMEM 2
+unchanged. It sends the card nothing but read-only queries and two mouse
+switches, from a whitelist enforced in the one routine that writes its port,
+because on both machines **the card is the boot disk**. Read its README
+before sending that card anything.
+
+It was two projects, `PicoMEM1` and `PicoMEM2`, merged on 2026-09-20 once
+every tool had been run on both cards: the split described the order the work
+happened in, not a difference between the cards.
+
+`CH375.md` in this tree is the handover note that started it, and it has been
+kept current as the work moved. Read it before touching anything CH375, and
+`CH375Net/NEXT.md` over there before touching the packet driver, and
+`CH375Camera/NEXT.md` before adding a camera -- it is parked waiting for more
+cameras to try, and that file is the plan.
+
+**One constraint from that work applies to this machine generally**: the CH375
+card sits at I/O 0260, and anything else put there corrupts its reads --
+which is why both `device=` lines in `CONFIG.SYS` are commented out and must
+stay together or not at all.
+
 ## Status
 
 What is installed and working, as opposed to what is written up:
@@ -993,10 +1291,71 @@ What is installed and working, as opposed to what is written up:
   `db`-encoded immediate shift really executes; the FPU probe runs on a machine
   with no coprocessor without hanging.
 
+* **The transport, at size.** 10 MB byte-exact in one attempt once the box
+  started answering ARP; both directions resume from a byte offset. Before
+  that, multi-megabyte transfers stalled partway and it read as a flaky link
+  for weeks. `docs/network.md` is the account, and it is the first thing to
+  read before touching `net.pas` or `tftp.pas`.
+* **Build 62 is public**, at https://github.com/jdredd87/DOSBridge -- the
+  first release carrying `docs/`, the ARP fix and the `dosd` single-instance
+  guard. See **Cutting a public release** above for how, and for the two
+  things building does not verify.
+* **Multi-box, built and verified on BOTH REAL MACHINES 2026-09-21.** The V30
+  and the 386SX poll one `dosd` at once and are addressed independently;
+  `dosrun FPU.EXE --box all` ran one binary on both in parallel and the diff
+  table named the difference (`NEC V20/V30` + Intel 8087 against `80386 or
+  later` + none), which is exactly what `boxes.json` says to expect of each.
+  Two **concurrent** `dospull`s of the same path returned each machine's own
+  `NET.CFG` -- `.66` to the V30 and `.67` to the 386SX -- which is the case
+  that silently returned the other box's bytes before the pull was keyed on
+  the job id. `selftest.py` step 7 covers the same ground with two simulated
+  boxes and fails if that keying is reverted.
+
+  **`verify --all` says the two `C:\TOOLS` have NOT drifted**: 41 tools
+  checked on each, byte-identical to each other on all 33 that differ from
+  the current local build, `PARALLAX.EXE` missing on both. So the
+  one-identical-toolset property survived the second SD card, and both boxes
+  are simply still on the 2026-09-19 deploy.
+
+  `SET BOXID=` is written into `dos/live/AI.BAT` but **not deployed**, and
+  did not need to be: `dosd` routes an untagged poll on its source address,
+  so both machines work with nothing on either DOS box touched. It buys the
+  identity cross-check, not the routing. `docs/multibox.md` has the account.
+* **`PARALLAX` (NEON DRIFT), verified on the V30 on 2026-09-21**: 33.6 fps
+  locked to two refreshes, band repaint 11.7ms against 14.27ms of beam, city
+  coverage equal at both ends of the sweep (198 and 198 of 320 columns), the
+  8087 winning the table race 1067ms to 3850ms, and 461 notes of OPL2 through
+  the PicoMEM's emulated AdLib. It is **not** in a public build yet -- cutting
+  one is a separate deliberate step.
+
+  Three of its findings are general and are in the topic docs rather than
+  here: the pixel pan is latched a refresh later than the start address
+  (`docs/graphics.md`, and **`starter/modex.pas` still has it**, so
+  `scroller.pas` almost certainly shimmers the same way); a frame that is
+  sometimes one refresh and sometimes two is worse than always two
+  (`docs/graphics.md`); and PIT channel 0 is in mode 3, so every sub-tick
+  measurement -- `starter/prof.pas` included -- is ambiguous by half a tick
+  (`docs/tools.md`).
+
+**The V30 was re-verified on 2026-09-20** and the `VidFix` change broke
+nothing on it. `VMODES -t` set and confirmed **38 of 38** video modes;
+`HWINFO`, `VIDCHK`, `FPU /T`, `BENCH`, `FPUPROBE`, `SYSINFO`, `DSTAT`,
+`DEVS`, `MEMMAP`, `IVT`, `SERIAL`, `PKTDRV`, `SCRAPE`, `VESACHK` and
+`PROFTEST` all pass, as do `GTEST`, `BALLS`, `MATRIX`, `SVGATEXT`, `MOZART`,
+`AMOZART`, `SCROLLER`, `RAYCAST` and `FRACTAL` on both inner loops. `VidFix`
+is inert here for a reason worth knowing: with an 8087 fitted it sees a
+coprocessor and exits before touching anything.
+
+The CH375 side passed too, on the same machine: the full `USBINFO`
+descriptor dump, `SERPROBE`, `SERTALK` pulling a complete `ATI4` S-register
+dump off the modem through a Keyspan, `FOSDET` both ways round, and
+`FOSTEST` at **57 passed, 0 failed** over the loopback transport.
+
 Known not exercised: `dosctl stop` over the wire (the flag arrives from Windows
 rather than the keyboard, same `:QUIT` path), `dosreboot --cold`, `HANG.SYS`,
-and the 186/286/386 branch of the CPU probe -- `AAD` answers NEC first and
-short-circuits it.
+and the 186/286 branch of the CPU probe -- `AAD` answers NEC first and
+short-circuits it; the 386 branch is confirmed on the Gateway 2000 386SX/25. `selftest.py` has not been run since the transport moved to
+UGET/UPUT, because it needs the ports `dosd` is holding.
 
 The verification record behind all of this, and the quiet-failure gap that
 `PEND.BAT` and `DRVOUT.TXT` were written to close, is in `docs/agent.md`.

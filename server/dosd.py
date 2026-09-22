@@ -10,7 +10,14 @@ back the same way, using the bridge's own IPv4/UDP stack -- no mTCP anywhere.
   port 8069  UDP    TFTP. THE transport: job polls, file fetches, results,
                     and `dosctl pull`. Reserved names `job`, `result`, `pull`;
                     `name@<offset>` resumes a stalled transfer from a byte
-                    offset; RFC 2348 blksize is negotiated up to 1400
+                    offset; RFC 2348 blksize is negotiated up to 1400.
+                    A reserved name may carry a box id -- `job.v30` -- which
+                    is how one daemon serves several DOS machines. See
+                    docs/multibox.md; the short version is that identity in
+                    the resource NAME costs a string in a batch file, while
+                    a second daemon on a second port would need a recompiled
+                    UGET.EXE deployed to each box over the very transport it
+                    implements
   port 8080  HTTP   /queue        (CLI) queue a job, returns job id
                     /result/<id>  (CLI) long-poll for that job's result
                     /status       (CLI) health / last-seen-boot info
@@ -43,9 +50,30 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
+import boxes as boxreg
+
 HTTP_PORT = 8080
 RESULT_PORT = 8081
 PULL_PORT = 8082
+
+# Which interface to listen on. 0.0.0.0 is correct for the real daemon --
+# the whole point is that DOS machines across the LAN can reach it.
+#
+# DOSD_BIND=127.0.0.1 makes a daemon UNREACHABLE from the LAN, and exists
+# for selftest.py, where it is load-bearing rather than tidy. selftest runs
+# its OWN dosd and its own simulated box; bound to 0.0.0.0 that daemon is
+# indistinguishable, to a real DOS machine, from the one it replaced. On
+# 2026-09-21 both live boxes polled a selftest daemon and raced the
+# simulator for its jobs -- and one of those jobs fetches and runs PROG.EXE,
+# which is 3600 bytes of generated pattern, not a program. A real 386SX
+# executed it and had to be recovered by hand.
+#
+# It had always been this way and had never bitten, because the host
+# firewall was silently dropping every inbound poll. Fixing the firewall
+# removed the accidental protection and exposed the real hazard the same
+# afternoon. A test that can reach production hardware will eventually
+# reach it.
+BIND_ADDR = os.environ.get("DOSD_BIND", "0.0.0.0")
 # TFTP, the UDP replacement for HTGET and NC. 69 is the real TFTP port
 # but binding it needs privilege on most systems, and nothing else here
 # is privileged -- so it sits with the bridge's other ports instead.
@@ -155,12 +183,135 @@ POWERCYCLE_OFF_URL = os.environ.get("DOSD_POWER_OFF", "")
 POWERCYCLE_ON_URL = os.environ.get("DOSD_POWER_ON", "")
 
 
+# ---------------------------------------------------------------------------
+# Which machine are we talking to?
+#
+# ONE_BOX is the key every job and every piece of per-box state uses when no
+# boxes.json exists. That is the unconfigured install and it must keep
+# behaving exactly as it did when the bridge could only ever mean one
+# machine -- same routing, same log lines, same status text.
+#
+# So the multi-box code path is always taken and the single-box case is just
+# a registry of one. A second code path guarded by "is this configured?" is
+# the kind of thing that works for a year and then diverges in the one
+# session somebody is relying on it.
+# ---------------------------------------------------------------------------
+
+ONE_BOX = "dos"
+
+
+def registry():
+    """The box registry, or None. Never raises into a serving thread."""
+    try:
+        return boxreg.load()
+    except boxreg.BoxError as e:
+        log("!! boxes.json is unusable, falling back to single-box mode: %s"
+            % e)
+        return None
+
+
+def known_boxes():
+    reg = registry()
+    return sorted(reg["boxes"]) if reg else [ONE_BOX]
+
+
+def tagging():
+    """Tag log lines with a box id only once there is more than one box.
+
+    With a single machine the id adds a column that can only ever say one
+    thing, and these logs are read under pressure.
+
+    Deliberately NOT via registry(): log() calls this, and registry() logs
+    when the file is bad, so routing this through it would recurse on
+    exactly the broken-config case it exists to report.
+    """
+    try:
+        reg = boxreg.load()
+    except boxreg.BoxError:
+        return False
+    return bool(reg) and len(reg["boxes"]) > 1
+
+
+def default_box():
+    reg = registry()
+    if not reg:
+        return ONE_BOX
+    return reg["default"] or sorted(reg["boxes"])[0]
+
+
+def split_box(name, reserved):
+    """('job.v30', 'job') -> ('v30', True). ('job', 'job') -> (None, True).
+
+    Returns (box, matched). `box` is None when the name carried no id, which
+    is what every agent built before this change sends -- and is why a
+    second machine can join the bridge without anything on the DOS side
+    being touched at all.
+    """
+    low = name.lower()
+    if low == reserved:
+        return None, True
+    if low.startswith(reserved + "."):
+        return low[len(reserved) + 1:], True
+    return None, False
+
+
+def box_for_poll(declared, ip):
+    """Route one poll to a box, and shout about anything that disagrees.
+
+    Three layers, of increasing cost and increasing truth (docs/multibox.md):
+    what the box DECLARES in the resource name, what we OBSERVE as its
+    source address, and what it MEASURES as. This is the first two.
+
+    A mismatch is a loud warning and never a silent reroute. The declared id
+    wins, because it is what the machine believes it is -- rerouting on the
+    address instead would mean an SD card moved between machines quietly
+    starts answering for the other one, which is the single worst failure
+    this design has to avoid.
+    """
+    reg = registry()
+    observed = boxreg.by_ip(ip, reg) if reg else None
+
+    if declared:
+        if reg and declared not in reg["boxes"]:
+            log("!! a box calling itself %r polled from %s and is not in "
+                "boxes.json -- registered: %s"
+                % (declared, ip, ", ".join(sorted(reg["boxes"]))))
+            return declared if not observed else observed
+        if observed and observed != declared:
+            log("!! boxid %s polled from %s, but %s is registered at that "
+                "address and %s is at %s. An SD card that moved machines, a "
+                "cloned disk, or a box that was re-addressed."
+                % (declared, ip, observed, declared,
+                   boxreg.ip_of(declared, reg)))
+        elif reg and not observed and boxreg.ip_of(declared, reg) != "any":
+            log("!! boxid %s polled from %s but is registered at %s"
+                % (declared, ip, boxreg.ip_of(declared, reg)))
+        return declared
+
+    if observed:
+        return observed
+    if reg and len(reg["boxes"]) == 1:
+        return sorted(reg["boxes"])[0]
+    if reg:
+        # Several boxes registered and this poll matches none of them by
+        # address and carries no id. Routing it to the default would put one
+        # machine's jobs on another, so say so instead and answer it idle.
+        log("!! a poll from %s matches no registered box and carries no "
+            "BOXID -- it will only ever be told there is no work. "
+            "Registered: %s"
+            % (ip, ", ".join("%s at %s" % (b, s.get("ip"))
+                             for b, s in sorted(reg["boxes"].items()))))
+        return None
+    return ONE_BOX
+
+
 class Job:
-    def __init__(self, batch, label, timeout):
+    def __init__(self, batch, label, timeout, box=ONE_BOX):
         self.id = uuid.uuid4().hex[:8]
         self.batch = batch
         self.label = label
         self.timeout = timeout
+        self.box = box
         self.kind = "run"
         self.done = threading.Event()
         self.output = None
@@ -170,29 +321,55 @@ class Job:
 
 
 class State:
+    """Per-box job state.
+
+    Every mapping here is keyed on a box id, EXCEPT `pulls`, which is keyed
+    on a job id -- see deliver_blob() for why that is strictly stronger.
+
+    The transport underneath this was already multi-box safe before any of
+    it was written: every piece of transfer state in the TFTP layer is keyed
+    on the source address, as a side effect of the resume and deduplication
+    work done for the transport stall. Two boxes at two addresses cannot
+    collide down there. This class is where the single-box assumption lived.
+    """
+
     def __init__(self):
         self.lock = threading.Lock()
-        self.pending = queue.Queue()
-        self.jobs = {}
-        self.awaiting = None          # job dispatched, waiting on its result
-        self.awaiting_pull = None     # pull job whose bytes are due on PULL_PORT
-        self.last_poll = 0.0          # last time DOS asked for work
-        self.boot_events = []         # ##BOOTOK / ##BOOTFAIL reports
+        self.queues = {}              # box -> queue.Queue of pending jobs
+        self.jobs = {}                # job id -> Job
+        self.awaiting = {}            # box -> job dispatched, result due
+        self.pulls = {}               # JOB ID -> pull job, bytes due
+        self.last_poll = {}           # box -> when it last asked for work
+        self.boot_events = []         # ##BOOTOK / ##BOOTFAIL, tagged per box
         self.wake = threading.Event()
+
+    def queue_for(self, box):
+        with self.lock:
+            q = self.queues.get(box)
+            if q is None:
+                q = self.queues[box] = queue.Queue()
+            return q
 
     def submit(self, job):
         with self.lock:
             self.jobs[job.id] = job
-        self.pending.put(job)
+        self.queue_for(job.box).put(job)
         self.wake.set()
         return job.id
 
-    def take(self, hold):
-        """Block up to `hold` seconds for a job. Returns Job or None."""
+    def take(self, box, hold):
+        """Block up to `hold` seconds for a job for `box`. Job or None.
+
+        Jobs stay strictly serialised WITHIN a box for free, because the
+        queue is drained by a machine that polls, CALLs one JOB.BAT, and
+        only then polls again. Across boxes they run in parallel, which is
+        the entire point.
+        """
+        q = self.queue_for(box)
         deadline = time.time() + hold
         while True:
             try:
-                return self.pending.get(timeout=max(0.05, deadline - time.time()))
+                return q.get(timeout=max(0.05, deadline - time.time()))
             except queue.Empty:
                 if time.time() >= deadline:
                     return None
@@ -206,24 +383,50 @@ class State:
         job.rc = rc
         job.done.set()
         with self.lock:
-            if self.awaiting is job:
-                self.awaiting = None
-            if self.awaiting_pull is job:
-                self.awaiting_pull = None
+            if self.awaiting.get(job.box) is job:
+                self.awaiting.pop(job.box, None)
+            self.pulls.pop(job.id, None)
         return True
 
-    def deliver_blob(self, data):
-        """
-        Attach raw bytes arriving on PULL_PORT to the pull job in flight.
+    def deliver_blob(self, data, job_id=None):
+        """Attach raw pull bytes to the job that asked for them.
 
-        There is no framing on the wire: NC just opens a socket and streams the
-        file. That is safe here because the DOS box runs exactly one job at a
-        time -- it polls, CALLs one JOB.BAT, and only then polls again -- so at
-        most one pull can ever be outstanding.
+        There is no framing on the wire: the box just streams the file under
+        an agreed name. That used to be safe because a single DOS box runs
+        one job at a time, so at most one pull could be outstanding -- and
+        the bytes went to a single global slot.
+
+        FALSE THE MOMENT THERE ARE TWO BOXES. Two concurrent pulls and the
+        bytes attach to whichever pull the slot happens to hold: you get the
+        other machine's file, byte-exact, complete-looking, and wrong. That
+        is the same failure shape as NC without -bin turning a 27298-byte
+        EXE into a plausible 27258-byte one, and as two daemons splitting
+        one UDP transfer. Plausible and undetectable downstream is the worst
+        category there is.
+
+        So the job id is carried in the upload NAME (`pull.<jobid>`, written
+        into the batch by build_pull_batch) and the blob is keyed on it.
+        That is stronger than keying on the box: per-box would still let two
+        pulls cross if one box's agent ever became concurrent, and per-job
+        cannot.
+
+        job_id=None is the legacy name `pull`, from a batch an older dosd
+        generated. It falls back to the single outstanding pull, and refuses
+        to guess when there is more than one.
         """
         with self.lock:
-            job = self.awaiting_pull
-            self.awaiting_pull = None
+            if job_id is not None:
+                job = self.pulls.pop(job_id, None)
+            elif len(self.pulls) == 1:
+                _, job = self.pulls.popitem()
+            elif not self.pulls:
+                job = None
+            else:
+                log("!! an untagged pull arrived with %d pulls in flight -- "
+                    "refusing to guess which one it belongs to. The box is "
+                    "running a batch from an older dosd."
+                    % len(self.pulls))
+                return False
         if not job:
             return False
         job.blob = data
@@ -231,8 +434,8 @@ class State:
         job.output = "pulled %d bytes" % len(data)
         job.done.set()
         with self.lock:
-            if self.awaiting is job:
-                self.awaiting = None
+            if self.awaiting.get(job.box) is job:
+                self.awaiting.pop(job.box, None)
         return True
 
 
@@ -680,6 +883,14 @@ def build_pull_batch(job_id, remote_path):
     The bytes now arrive on TFTP_PORT under the reserved name `pull` and land
     in the same sink, so `dosctl pull` is unchanged.
 
+    That name carries THIS JOB'S ID -- `pull.3f2a91bc`. The name is generated
+    here, on the server, so nothing on the DOS side knows or cares; it is a
+    string in a batch file either way. It exists because the bytes used to
+    land in a single global slot, which is correct for one DOS box and
+    silently wrong for two: two concurrent pulls and you get the other
+    machine's file, byte-exact and complete-looking. See
+    State.deliver_blob().
+
     Only the not-found path reports on RESULT_PORT; a successful transfer is
     signalled by the bytes themselves arriving.
     """
@@ -688,7 +899,7 @@ def build_pull_batch(job_id, remote_path):
         job_head(job_id, "pull " + remote_path),
     ] + stash_time() + [
         "IF NOT EXIST %s GOTO NOFILE" % remote_path,
-        UPUT_DOS + " %UPHOST% " + remote_path + " pull",
+        UPUT_DOS + " %UPHOST% " + remote_path + " pull." + job_id,
         "IF ERRORLEVEL 1 GOTO SENDFAIL",
     ] + timed_foot(job_id, [(None, "sent")], "FP") + [
         "GOTO END",
@@ -1041,17 +1252,23 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(urlparse(self.path).path)
 
         if path == "/job":
-            STATE.last_poll = time.time()
-            job = STATE.take(TFTP_HOLD_SECS)
+            # Legacy HTTP poll, for an agent older than the UDP transport.
+            # It carries no box id, so it routes purely on the source
+            # address -- which is enough, and is why an old agent can share
+            # the bridge with a new one.
+            box = box_for_poll(None, self.client_address[0])
+            if box is not None:
+                STATE.last_poll[box] = time.time()
+            job = STATE.take(box, TFTP_HOLD_SECS) if box is not None else None
             if job is None:
                 self._send(200, to_dos_text(IDLE_BATCH))
                 return
             job.dispatched_at = time.time()
             with STATE.lock:
-                STATE.awaiting = job
+                STATE.awaiting[box] = job
                 if job.kind == "pull":
-                    STATE.awaiting_pull = job
-            log("-> dispatch %s  %s" % (job.id, job.label))
+                    STATE.pulls[job.id] = job
+            log("-> dispatch %s  %s" % (job.id, job.label), box)
             self._send(200, to_dos_text(job.batch))
             return
 
@@ -1097,13 +1314,49 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/status":
+            now = time.time()
+            reg = registry()
             with STATE.lock:
-                age = time.time() - STATE.last_poll if STATE.last_poll else None
-                self._send(200, json.dumps({
-                    "last_poll_secs_ago": round(age, 1) if age else None,
-                    "boot_events": STATE.boot_events[-10:],
-                    "files": sorted(list_staged()),
-                }))
+                polls = dict(STATE.last_poll)
+                events = list(STATE.boot_events[-10:])
+                queued = {b: q.qsize() for b, q in STATE.queues.items()}
+                busy = {b: j.label for b, j in STATE.awaiting.items() if j}
+
+            names = known_boxes()
+            # A box that has polled but is not registered still appears, so
+            # an unexpected machine on the bridge is visible rather than
+            # silently dropped from the board.
+            for b in polls:
+                if b not in names:
+                    names.append(b)
+
+            per = {}
+            for b in names:
+                t = polls.get(b)
+                per[b] = {
+                    "ip": boxreg.ip_of(b, reg) if reg else None,
+                    "desc": boxreg.desc_of(b, reg) if reg else "",
+                    "registered": bool(reg) and b in reg["boxes"],
+                    "last_poll_secs_ago": round(now - t, 1) if t else None,
+                    "queued": queued.get(b, 0),
+                    "busy": busy.get(b),
+                }
+
+            # The single-box keys stay, unconditionally. dosctl reads the
+            # per-box board when it is there and these otherwise, so an old
+            # dosctl against a new dosd and the reverse both keep working --
+            # the two halves of this bridge are upgraded by different
+            # commands and are routinely out of step.
+            newest = [p for p in polls.values() if p]
+            age = now - max(newest) if newest else None
+            self._send(200, json.dumps({
+                "last_poll_secs_ago": round(age, 1) if age else None,
+                "boot_events": events,
+                "files": sorted(list_staged()),
+                "default_box": default_box() if reg else None,
+                "multibox": bool(reg),
+                "boxes": per,
+            }))
             return
 
         self._send(404, "not found\r\n")
@@ -1138,6 +1391,28 @@ class Handler(BaseHTTPRequestHandler):
         kind = req.get("kind", "run")
         timeout = float(req.get("timeout", 120))
         jid = uuid.uuid4().hex[:8]
+
+        # Which machine. dosctl resolves this and sends it explicitly; a
+        # caller that sends nothing gets the default, which with no
+        # boxes.json is the one and only box.
+        #
+        # An unknown id is REFUSED rather than defaulted. A job silently
+        # rerouted to another machine produces a result that looks entirely
+        # correct and simply ran on the wrong CPU -- the one failure this
+        # whole design is arranged to prevent.
+        reg = registry()
+        box = (req.get("box") or "").strip().lower() or default_box()
+        if reg and box not in reg["boxes"]:
+            self._send(404, json.dumps({
+                "error": "no box called %r. Registered: %s"
+                         % (box, ", ".join(sorted(reg["boxes"])))}))
+            log("!! refused %s for unknown box %r" % (kind, box))
+            return
+        if not reg and box != ONE_BOX:
+            self._send(404, json.dumps({
+                "error": "--box %s, but this dosd has no boxes.json and is "
+                         "serving a single machine" % box}))
+            return
 
         # Refuse to dispatch a job whose file is not staged. Catching it here
         # costs one clear error; letting it through costs a wedged DOS box,
@@ -1186,18 +1461,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, json.dumps({"error": "bad kind"}))
             return
 
-        job = Job(batch, label, timeout)
+        job = Job(batch, label, timeout, box=box)
         job.id = jid
         job.kind = kind
         STATE.submit(job)
-        self._send(200, json.dumps({"id": jid}))
+        self._send(200, json.dumps({"id": jid, "box": box}))
 
 
 # ---------------------------------------------------------------------------
 # Raw TCP result intake (mTCP NC pushes here)
 # ---------------------------------------------------------------------------
 
-def ingest_result(payload):
+def ingest_result(payload, box=None):
     """Parse one result report and hand it to the waiting job.
 
     Factored out of ResultHandler so the TCP path (NC) and the TFTP path
@@ -1219,17 +1494,31 @@ def ingest_result(payload):
             except ValueError:
                 rc = None
         elif s.startswith("##BOOTOK") or s.startswith("##BOOTFAIL"):
-            STATE.boot_events.append({"t": time.time(), "event": s})
-            log("<- boot event: %s" % s)
+            STATE.boot_events.append({"t": time.time(), "event": s,
+                                      "box": box or ONE_BOX})
+            log("<- boot event: %s" % s, box)
             body.append(s)
         else:
             body.append(line)
 
     text = "\n".join(body).strip("\n")
+    with STATE.lock:
+        job = STATE.jobs.get(job_id) if job_id else None
+    # A result that came back from a machine other than the one the job was
+    # sent to is the single worst failure this design can produce, because
+    # the output looks entirely normal -- it simply ran on the wrong CPU.
+    # It cannot happen through the queues, which are per box; it CAN happen
+    # if two boxes are somehow running the same JOB.BAT, which is what a
+    # cloned SD card would do. One line converts it into an error message.
+    if job and box and job.box != box and tagging():
+        log("!! result for job %s came back from %s but it was dispatched "
+            "to %s -- two machines may be running the same JOB.BAT"
+            % (job_id, box, job.box), box)
     if job_id and STATE.deliver(job_id, text, rc):
-        log("<- result  %s  rc=%s  (%d bytes)" % (job_id, rc, len(text)))
+        log("<- result  %s  rc=%s  (%d bytes)" % (job_id, rc, len(text)),
+            job.box if job else box)
     else:
-        log("<- unmatched report:\n%s" % text[:400])
+        log("<- unmatched report:\n%s" % text[:400], box)
 
 
 class ResultHandler(socketserver.BaseRequestHandler):
@@ -1304,7 +1593,15 @@ LOG_PATH = os.environ.get(
 _log_lock = threading.Lock()
 
 
-def log(msg):
+def log(msg, box=None):
+    """One line, on the console and in dosd.log.
+
+    `box` tags the line once more than one machine is registered. One log
+    still, not one per box: interleaving is INFORMATIVE when both machines
+    are running the same test, which is the case that matters most.
+    """
+    if box and tagging():
+        msg = "[%-5s] %s" % (box, msg)
     line = "[%s] %s" % (time.strftime("%H:%M:%S"), msg)
     print(line, flush=True)
     if not LOG_PATH:
@@ -1735,25 +2032,48 @@ def tftp_recv_blob(sock, addr, blk_size=None, oack=None, out=None,
             sock.sendto(struct.pack("!HH", OP_ACK, blk), addr)
 
 
-def serve_job(sock, addr):
+def serve_job(sock, addr, box):
     """Hold a job request open, then hand over whatever came up."""
     # last_poll is stamped before the hold, so `dosctl status` does not call a
     # box stale while it is legitimately waiting on us.
-    STATE.last_poll = time.time()
-    log("   job RRQ from %s:%d -- holding" % addr)
-    job = STATE.take(POLL_HOLD_SECS)
+    if box is not None:
+        STATE.last_poll[box] = time.time()
+        # A POLL PROVES THE PREVIOUS JOB IS OVER, so stop calling this box
+        # busy. The agent polls, CALLs exactly one JOB.BAT -- which sends its
+        # own result before returning -- and only then polls again, so a
+        # request for work cannot overlap the job before it.
+        #
+        # Without this, a job whose result never arrived left `awaiting` set
+        # until the NEXT dispatch overwrote it, and `dosctl status` reported
+        # "busy: <that job>" on a machine that was sitting idle polling every
+        # six seconds. It cost real confusion during the 386SX tool upgrade:
+        # the board said busy while the box was plainly alive and free, which
+        # is exactly the kind of status this project refuses to ship -- a
+        # wrong signal is worse than no signal, because it gets believed.
+        #
+        # It was invisible while `awaiting` was a single global slot: every
+        # dispatch to the one box overwrote it, so it self-healed. Keying it
+        # per box is what made a lost result persist.
+        with STATE.lock:
+            STATE.awaiting.pop(box, None)
+    log("   job RRQ from %s:%d -- holding" % addr, box)
+    # An unroutable poll -- several boxes registered, this one matches none
+    # of them and declared nothing -- is answered idle rather than dropped.
+    # Dropping it would leave that machine retrying forever with nothing on
+    # any screen to say why; box_for_poll has already said so in the log.
+    job = STATE.take(box, POLL_HOLD_SECS) if box is not None else None
     if job is None:
         ok, _ = tftp_send_blob(sock, addr, to_dos_text(IDLE_BATCH),
                                retries=POLL_SEND_RETRIES)
         log("   idle batch -> %s:%d  %s" % (addr[0], addr[1],
-                                            "acked" if ok else "NO ACK"))
+                                            "acked" if ok else "NO ACK"), box)
         return
     job.dispatched_at = time.time()
     with STATE.lock:
-        STATE.awaiting = job
+        STATE.awaiting[box] = job
         if job.kind == "pull":
-            STATE.awaiting_pull = job
-    log("-> dispatch %s  %s  (tftp)" % (job.id, job.label))
+            STATE.pulls[job.id] = job
+    log("-> dispatch %s  %s  (tftp)" % (job.id, job.label), box)
     ok, acked = tftp_send_blob(sock, addr, to_dos_text(job.batch),
                                retries=POLL_SEND_RETRIES)
     if ok:
@@ -1767,16 +2087,15 @@ def serve_job(sock, addr):
     # command is not something the caller can see or undo.
     if acked == 0:
         with STATE.lock:
-            if STATE.awaiting is job:
-                STATE.awaiting = None
-            if STATE.awaiting_pull is job:
-                STATE.awaiting_pull = None
-        STATE.pending.put(job)
+            if STATE.awaiting.get(job.box) is job:
+                STATE.awaiting.pop(job.box, None)
+            STATE.pulls.pop(job.id, None)
+        STATE.queue_for(job.box).put(job)
         log("   udp dispatch of %s failed with nothing acked -- requeued"
-            % job.id)
+            % job.id, box)
     else:
         log("   udp dispatch of %s failed after %d block(s) acked -- NOT "
-            "requeued, it may already have run" % (job.id, acked))
+            "requeued, it may already have run" % (job.id, acked), box)
 
 
 def tftp_serve(req, addr):
@@ -1818,8 +2137,13 @@ def tftp_serve(req, addr):
     # from a new port, so it differs in both halves of the key. That matters,
     # because a resume arriving while the stalled flow is still winding down
     # is the normal case, not the exception.
+    # A box id may ride in any reserved name: `job.v30`, `result.v30`,
+    # `pull.<jobid>`. Split it off once, here, so every branch below sees
+    # the same two values and cannot disagree about what a name means.
+    poll_box, is_poll = split_box(name, "job")
+
     hold = None
-    if op in (OP_RRQ, OP_WRQ) and name.lower() != "job":
+    if op in (OP_RRQ, OP_WRQ) and not is_poll:
         hold = (addr, op, name.lower())
         with _xfer_holds_lock:
             if hold in _xfer_holds:
@@ -1834,7 +2158,7 @@ def tftp_serve(req, addr):
     sock.settimeout(TFTP_TIMEOUT)
     try:
         if op == OP_RRQ:
-            if name.lower() == "job":
+            if is_poll:
                 with _job_holds_lock:
                     if addr in _job_holds:
                         # A retransmit of a request we are already holding.
@@ -1842,7 +2166,7 @@ def tftp_serve(req, addr):
                         return
                     _job_holds[addr] = True
                 try:
-                    serve_job(sock, addr)
+                    serve_job(sock, addr, box_for_poll(poll_box, addr[0]))
                 finally:
                     with _job_holds_lock:
                         _job_holds.pop(addr, None)
@@ -1974,16 +2298,27 @@ def tftp_serve(req, addr):
                 return
             with _uploads_lock:
                 _uploads.pop(ukey, None)
-            if name.lower() in ("result", "result.txt"):
-                ingest_result(blob)
-            elif name.lower() == "pull":
-                # A pull's bytes, over our own stack. Same sink the legacy
-                # NC path used, so dosctl is unchanged either way.
-                if STATE.deliver_blob(blob):
-                    log("tftp: pulled %d bytes from %s" % (len(blob), addr[0]))
+            res_box, is_result = split_box(name, "result")
+            pull_id, is_pull = split_box(name, "pull")
+            if is_result or name.lower() == "result.txt":
+                # Routed by the ##JOB= id inside the payload, which is
+                # globally unique, so a box id on the name is only ever a
+                # log tag here. It is read anyway: a result from a box that
+                # is not the one registered at that address is worth saying
+                # out loud wherever it shows up.
+                ingest_result(blob, res_box or boxreg.by_ip(addr[0],
+                                                            registry()))
+            elif is_pull:
+                # A pull's bytes. The job id is in the NAME -- see
+                # State.deliver_blob for why that, and not the box, is what
+                # they are keyed on.
+                if STATE.deliver_blob(blob, pull_id):
+                    log("tftp: pulled %d bytes from %s" % (len(blob), addr[0]),
+                        boxreg.by_ip(addr[0], registry()))
                 else:
-                    log("tftp: %d-byte pull from %s with no pull in flight"
-                        % (len(blob), addr[0]))
+                    log("tftp: %d-byte pull from %s with no pull in flight%s"
+                        % (len(blob), addr[0],
+                           "" if pull_id is None else " for job " + pull_id))
             else:
                 rel = safe_rel(name)
                 full = rel_to_path(rel) if rel else None
@@ -2030,7 +2365,7 @@ def tftp_listen():
     # daemon thread.
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.bind(("0.0.0.0", TFTP_PORT))
+        s.bind((BIND_ADDR, TFTP_PORT))
     except OSError as exc:
         log("dosd: cannot bind UDP %d -- another dosd is already running."
             % TFTP_PORT)
@@ -2054,10 +2389,10 @@ def main():
     if not os.path.isfile(exit0):
         with open(exit0, "wb") as fh:
             fh.write(EXIT0_COM)
-    http = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), Handler)
+    http = ThreadingHTTPServer((BIND_ADDR, HTTP_PORT), Handler)
     http.daemon_threads = True
-    raw = ReuseTCPServer(("0.0.0.0", RESULT_PORT), ResultHandler)
-    pull = ReuseTCPServer(("0.0.0.0", PULL_PORT), PullHandler)
+    raw = ReuseTCPServer((BIND_ADDR, RESULT_PORT), ResultHandler)
+    pull = ReuseTCPServer((BIND_ADDR, PULL_PORT), PullHandler)
 
     threading.Thread(target=raw.serve_forever, daemon=True).start()
     threading.Thread(target=pull.serve_forever, daemon=True).start()
@@ -2075,7 +2410,23 @@ def main():
         except OSError:
             pass
     log("serving files from %s" % FILES_DIR)
-    log("waiting for the DOS box to poll /job ...")
+    # Say what this daemon thinks it is talking to, on the line above the
+    # first poll. A registry that is wrong is much easier to spot here than
+    # three hours later in a result that came from the other machine.
+    try:
+        reg = boxreg.load()
+    except boxreg.BoxError as e:
+        reg = None
+        log("!! %s" % e)
+        log("   carrying on in single-box mode.")
+    if reg:
+        for b in sorted(reg["boxes"]):
+            log("box %-5s %-15s %s%s"
+                % (b, boxreg.ip_of(b, reg), boxreg.desc_of(b, reg),
+                   "   (default)" if b == reg["default"] else ""))
+        log("waiting for %d DOS box(es) to poll ..." % len(reg["boxes"]))
+    else:
+        log("waiting for the DOS box to poll /job ...")
     try:
         http.serve_forever()
     except KeyboardInterrupt:

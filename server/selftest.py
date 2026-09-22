@@ -5,15 +5,71 @@ import subprocess, sys, time, os, signal, tempfile, socket
 HERE = os.path.dirname(os.path.abspath(__file__))
 procs = []
 
-def spawn(name, *args):
+# Steps 1-6 run the bridge as a SINGLE machine, and say so explicitly rather
+# than relying on there being no boxes.json. There is one in this tree now,
+# and without this the simulated box -- which polls from 127.0.0.1, an
+# address no real machine is registered at -- would be unroutable and every
+# step would fail for a reason that has nothing to do with what it tests.
+#
+# DOSD_BIND=127.0.0.1 IS THE IMPORTANT ONE HERE. This test starts its own
+# dosd, and a daemon bound to 0.0.0.0 is indistinguishable -- to a real DOS
+# machine polling the LAN -- from the one it replaced. On 2026-09-21 both
+# live boxes polled a selftest daemon and raced the simulated box for its
+# jobs. Step 1 dispatches `run local/PROG.EXE`, and PROG.EXE is 3600 bytes
+# of generated pattern rather than a program: a real 386SX executed it and
+# had to be recovered by hand.
+#
+# It had always been this way and had never bitten, because the host
+# firewall was quietly dropping every inbound poll. Fixing the firewall took
+# that accidental protection away and the hazard appeared the same
+# afternoon. Binding to loopback makes it structurally impossible rather
+# than a thing to remember.
+#
+ONE_BOX = dict(os.environ, DOSBRIDGE_BOXES="", DOSD_BIND="127.0.0.1")
+
+LOGS = []
+
+
+def spawn(name, *args, env=None):
+    """Start dosd or a simulated box, with its output going to a FILE.
+
+    Not a pipe. Nothing here ever read those pipes, so once a child had
+    written about 8 KB it blocked on the next print and simply stopped
+    being a DOS box -- and the simulator dumps a whole JOB.BAT per job, so
+    that took three or four jobs. The symptom was a job timing out several
+    steps into the run with the daemon looking perfectly healthy, which is
+    indistinguishable from the transport faults this test exists to catch.
+    A file cannot fill, and it is still there to read afterwards.
+    """
+    base = os.path.splitext(name)[0]
+    # Distinct per instance, or two simulated boxes truncate and interleave
+    # one file and neither can be read afterwards.
+    tag = "%s-%d" % (base, sum(1 for x in LOGS if base in x) + 1)
+    path = os.path.join(tempfile.gettempdir(), "selftest-%s.log" % tag)
+    fh = open(path, "w")
+    LOGS.append(path)
     p = subprocess.Popen([sys.executable, os.path.join(HERE, name)] + list(args),
-                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                         stdout=fh, stderr=subprocess.STDOUT,
+                         text=True, env=env or ONE_BOX)
+    p._logfile = path
     procs.append(p)
     return p
 
-def cli(*args, timeout=60):
+def stop_all():
+    for p in procs:
+        if p.poll() is None:
+            p.send_signal(signal.SIGTERM)
+    time.sleep(0.6)
+    for p in procs:
+        if p.poll() is None:
+            p.kill()
+    del procs[:]
+    time.sleep(0.6)
+
+def cli(*args, timeout=60, env=None):
     r = subprocess.run([sys.executable, os.path.join(HERE, "dosctl.py")] + list(args),
-                       capture_output=True, text=True, timeout=timeout)
+                       capture_output=True, text=True, timeout=timeout,
+                       env=env or ONE_BOX)
     return r
 
 def port_busy(port):
@@ -157,10 +213,129 @@ try:
         print("   " + ln)
 
     print("\n### 6. errorlevel ladder length: %d lines" % len(dosd.errorlevel_capture()))
+
+    # -----------------------------------------------------------------
+    # 7. Two boxes at once.
+    #
+    # Everything above proves the bridge works with one machine. This
+    # proves that adding a second does not let one machine's answer come
+    # back as the other's -- the only failure in the multi-box design
+    # that produces a result looking entirely correct.
+    #
+    # Both simulated boxes poll from 127.0.0.1, so they are registered
+    # with "ip": "any" and routed purely on the id they declare in the
+    # resource name -- job.v30 and job.sx386. That is deliberate: it
+    # exercises the DECLARED identity path, which is the one a real box
+    # uses, rather than the address shortcut that also happens to work.
+    # -----------------------------------------------------------------
+    print("\n### 7. two boxes on one daemon")
+    stop_all()
+
+    # Two ADDRESSES, not just two ids. 127.0.0.2 is a loopback alias
+    # Windows accepts without configuration, and the second box binds its
+    # sockets to it. That matters: dosd's in-flight flow registry is keyed
+    # on the source IP, where a new request for a file already going to
+    # that address deliberately supersedes the older transfer -- which is
+    # how a stalled one recovers. Two boxes on one address cancel each
+    # other's fetches the moment they ask for the same file at once, which
+    # is precisely what the fan-out below does. Real machines cannot share
+    # an address anyway; boxes.json refuses to register two that way.
+    REG = os.path.join(tempfile.gettempdir(), "selftest-boxes.json")
+    import json as _json
+    with open(REG, "w") as fh:
+        _json.dump({"default": "v30", "boxes": {
+            "v30": {"ip": "127.0.0.1", "desc": "simulated V30"},
+            "sx386": {"ip": "127.0.0.2", "desc": "simulated 386SX"}}}, fh)
+    # DOSD_BIND carried here too -- the two-box daemon must be just as
+    # unreachable from the LAN as the single-box one above.
+    TWO = dict(os.environ, DOSBRIDGE_BOXES=REG, DOSD_BIND="127.0.0.1")
+
+    spawn("dosd.py", env=TWO); time.sleep(1.5)
+    spawn("simulate_dos.py", "--box=v30", "--from=127.0.0.1", env=TWO)
+    spawn("simulate_dos.py", "--box=sx386", "--from=127.0.0.2", env=TWO)
+    time.sleep(3.0)
+
+    r = cli("status", timeout=25, env=TWO)
+    print(r.stdout.rstrip())
+    for b in ("v30", "sx386"):
+        assert b in r.stdout, "%s never appeared in the status board" % b
+    assert "never seen" not in r.stdout, (
+        "a registered box never polled -- routing by declared id is broken")
+
+    print("\n### 7b. a job goes to the box it was addressed to")
+    r = cli("exec", "--box", "sx386", "VER", "--timeout", "25",
+            timeout=60, env=TWO)
+    print("rc=%d" % r.returncode)
+    assert r.returncode == 0, "addressed exec failed"
+
+    print("\n### 7c. an unknown box is refused, not silently defaulted")
+    r = cli("exec", "--box", "nosuch", "VER", timeout=25, env=TWO)
+    assert r.returncode != 0, "an unknown box id was accepted"
+    assert "nosuch" in (r.stdout + r.stderr), "the refusal did not name it"
+    print("   refused: %s"
+          % (r.stdout + r.stderr).strip().splitlines()[0])
+
+    print("\n### 7d. TWO PULLS AT ONCE must not cross")
+    # THE regression test for this change. The pull bytes used to land in
+    # a single global slot on the server, which is correct for one DOS box
+    # and silently wrong for two: whichever pull the slot happened to hold
+    # got the other machine's file, byte-exact and complete-looking.
+    #
+    # The two boxes are asked for DIFFERENT paths, and the simulator
+    # answers a path it never fetched with a body naming that path -- so a
+    # crossed pull is visible in the bytes themselves. Revert
+    # build_pull_batch to the bare name `pull` and this fails.
+    import threading
+    got = {}
+
+    def do_pull(box, remote):
+        out = os.path.join(tempfile.gettempdir(), "pull-%s.bin" % box)
+        if os.path.exists(out):
+            os.remove(out)
+        rr = cli("pull", remote, "--box", box, "--out", out,
+                 "--timeout", "30", timeout=70, env=TWO)
+        got[box] = (rr.returncode,
+                    open(out, "rb").read() if os.path.exists(out) else b"")
+
+    ts = [threading.Thread(target=do_pull, args=a) for a in
+          (("v30", "C:\\WORK\\ONLYV30.TXT"),
+           ("sx386", "C:\\WORK\\ONLY386.TXT"))]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(90)
+
+    for box, want in (("v30", b"ONLYV30.TXT"), ("sx386", b"ONLY386.TXT")):
+        rc, blob = got.get(box, (None, b""))
+        print("   %-6s rc=%s  %d bytes  %r" % (box, rc, len(blob), blob[:60]))
+        assert rc == 0, "%s pull failed" % box
+        assert want in blob, (
+            "%s got the WRONG FILE -- two concurrent pulls crossed. That "
+            "is the single-slot bug this keying exists to stop." % box)
+    print("   both pulls came back with their own bytes")
+
+    print("\n### 7e. --box all runs on every machine and compares")
+    r = cli("run", PROG, "--box", "all", "--timeout", "30",
+            timeout=90, env=TWO)
+    print(r.stdout.rstrip())
+    assert r.returncode == 0, "fan-out reported a failure"
+    assert "v30" in r.stdout and "sx386" in r.stdout, "fan-out lost a box"
+
     print("\nALL TESTS PASSED")
+except BaseException:
+    # Where to look. A failure here is nearly always something the daemon
+    # or the simulated box said, and until now neither was readable at all:
+    # their output went into a pipe nobody drained.
+    print("\nchild logs:")
+    for path in LOGS:
+        print("  %s" % path)
+    raise
 finally:
     for p in procs:
-        p.send_signal(signal.SIGTERM)
+        try:
+            p.send_signal(signal.SIGTERM)
+        except Exception:
+            pass
     time.sleep(0.4)
     for p in procs:
         if p.poll() is None: p.kill()

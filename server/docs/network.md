@@ -469,6 +469,112 @@ means done" is correct TFTP -- so nothing detected it. Only comparing the
 delivered byte count against the source did, which is what the CRC-32 check on
 deploys now does automatically.
 
+## One box loses RESULTS, and it is the size of the output that predicts it
+
+**Found 2026-09-21, upgrading the tools on both machines.** The V30 took all
+33 files inside one foreground window with no retries. The 386SX lost 7 of
+33, and then kept failing in a way that read as a dead box and was not.
+
+What is actually failing is the **result coming back**, not the file going
+out. The signature is unambiguous once you look for it:
+
+* Every deploy job reported `rc=0`. Files arrived, often via a resume --
+  `resuming starter/BENCH.EXE at byte 12600` -- and the transfers completed.
+* `dosctl verify` came back **empty**, and empty is indistinguishable from
+  "no `HD.EXE` on the box", which is what it printed. `HD.EXE` was there, at
+  exactly the right size, and ran correctly when asked directly.
+* A one-command `DIR C:\TOOLS` timed out after 300 seconds while the box was
+  polling every three seconds throughout.
+
+The measurement that settles it: check the tools in **chunks** and the
+answers come back all-or-nothing per job -- `5/5 answered` or `0/5`, never
+partial. Individual lines are not being dropped; whole result uploads are.
+A `verify` of 41 tools is one job whose result is 40-odd lines, and it is the
+largest payload the bridge ever asks a box to send.
+
+So on a box like this:
+
+| | |
+|---|---|
+| one file per deploy job | 11 of 11 sent, every one first attempt |
+| CRC check 5 files per job | two chunks of five lost, nothing wrong |
+| CRC check 2 files per job | 10 of 10 answered |
+
+Final state was 41 of 41 byte-identical on both machines, zero mismatches --
+reached by making the jobs smaller, not by retrying the big ones.
+
+**Two traps worth carrying forward.** First, `dosctl upgrade --tools` decides
+what to send by comparing SIZE from a `DIR` listing, so a file that arrived
+corrupt at exactly the right length is invisible to it and never re-sent.
+Three of the five genuine mismatches here would have survived another full
+pass untouched. Working from a CRC list instead is what caught them -- the
+same argument the post-deploy CRC check is built on, applied to deciding what
+to send rather than confirming what was sent. Second, **`verify`'s
+all-in-one-job design fails silently in the direction of reporting a healthy
+toolset as a missing tool.** It should chunk on every box, not just this one.
+
+**The cause is RF, and it is not subtle once you know where the machines
+are.** The 386SX is DOWNSTAIRS; the V30 sits beside the router. That is the
+whole of it -- weaker signal, more loss, and the loss lands hardest on the
+largest thing the box ever has to send, which is a job's result.
+
+Recorded because the wrong answer was already written here and had to be
+taken out. The two boxes differ in several ways at once -- CPU, PicoMEM card
+model, card firmware date -- and with the machines' locations unstated it was
+the card that looked causal: the slow box had the older card on the older
+firmware, which is a tidy story and was wrong. The measurements above were
+all correct; the explanation bolted onto them was invented. Nobody needed to
+swap a card or flash anything, and a session was one step from recommending
+both.
+
+**So: ask where the machines physically are before attributing a link
+difference to what is plugged into them.** Same lesson as running mTCP as a
+control, and as reading the neighbour state rather than `arp -a` -- the
+instrument, or in this case the inventory, has to be able to express the
+answer before a null result means anything.
+
+What survives, and is the useful part: **on a box with a weak link, make the
+JOBS smaller rather than retrying the big ones.** One file per deploy, a
+handful of checksums per verify. That is the correct mitigation for signal
+loss and needs no hardware changed. If the 386SX is ever moved nearer the
+AP, or put on a better antenna, expect these symptoms to disappear -- and if
+they do not, then the card is worth looking at.
+
+## The Windows firewall, 2026-09-21: the fault that is not on the wire
+
+Before suspecting anything in this file, check that the polls are arriving at
+all. On 2026-09-21 **both** DOS machines went silent at once and stayed
+silent through a reboot, a power cycle and a daemon restart, and neither was
+broken. This PC's LAN interface is on the **Private** profile; the only
+inbound Allow rules for `python.exe` were scoped to **Public**; the default
+inbound action is block. Every poll was dropped before `dosd` could see it,
+while `netstat` showed the daemon bound to `0.0.0.0:8069` the whole time and
+both boxes' screens showed a healthy agent banner. `dosfirewall.cmd` adds
+port-scoped rules for UDP 8069 and TCP 8080-8082, limited to the boxes'
+subnet.
+
+**The instrument matters here as much as it did for the stall below.** `ping`
+proves nothing -- nothing on the DOS side answers ICMP unless mTCP is
+loaded. Sending a UDP datagram to the box forces this host to ARP for it, and
+then:
+
+```
+netsh interface ipv4 show neighbors "Ethernet"
+```
+
+`Reachable` means the box's own stack answered the ARP, so the machine is
+running and transmitting; the fault is that we are not listening. That is a
+different question from "is it hung", and it is the one worth asking first
+when nothing is arriving. Note `arp -a` cannot express it -- it prints a
+`dynamic` entry for an address whose neighbour state is `Unreachable`, which
+is exactly how the right hypothesis was discarded for months below.
+
+And the structural lesson, which is the ARP one arriving from the other
+direction: **two independent machines failing identically at the same moment
+points at what they share.** mTCP was the independent control that proved the
+fault was ours; a second DOS box is an independent control that proves the
+fault is not the box's.
+
 ## THE STALL: solved on 2026-09-12. It was ARP all along
 
 Everything in the three sections below was written while this was unexplained,

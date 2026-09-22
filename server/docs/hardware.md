@@ -36,13 +36,63 @@ The probe runs three tests in an order that matters: FLAGS bits 12-15 to split
 8086-class from 286 from 386+, then the undocumented `AAD` opcode to split NEC
 from Intel, then shift-count masking to split 8086 from 186. The shift test is
 last because sources disagree about whether the V20/V30 masks shift counts, so
-the probe never asks it that question. Only the `AAD` step has been run on real
-hardware; a 186/286/386 result is unconfirmed.
+the probe never asks it that question. Two steps have now been run on real
+hardware: `AAD` on the V30, and the FLAGS split on a **Gateway 2000 386SX/25**,
+which reports `cpu386` with `Has186` true and the immediate-shift path taken.
+A 186 or 286 result is still unconfirmed.
 
 `SYSINFO` and `HWINFO` both report `CpuName`, so the answer costs one round
 trip.
 
 ## The math coprocessor
+
+**The V30 box has an 8087 fitted, confirmed on the hardware 2026-09-20 and
+by its owner.** Everything below was written when it had none, and the
+warnings are all still exactly right -- they are about what happens on a
+machine *without* one, which is the case the code still has to survive. What
+changed is that this machine is no longer that case, and the `HasFpu` paths
+run here for the first time.
+
+`FPU /T` passes all seven arithmetic tests, including the FDIV round-trip and
+the zero-divide flag, with a control word of `03FF` -- an 8087, not a 287 or
+later. `BENCH` prints its four coprocessor rows here now:
+
+| | software | 8087 |
+|---|---|---|
+| 32-bit multiply | 11,484/s | **61,661/s** |
+| 32-bit divide | 6,916/s | **34,361/s** |
+| FPU add | -- | 71,780/s |
+| FPU sqrt | -- | 42,460/s |
+
+So x87 arithmetic is about **five times** the software 32-bit routines on
+this machine. That does **not** overturn the advice in the performance
+section, and the reason is worth keeping: `FRACTAL` ran its integer loop at
+108 rows in 73 ticks against the 8087's 60 rows in 76 -- the integer path is
+nearly twice as fast. It wins because it is Q8 fixed point in **16-bit**
+`IMUL`, which never used the slow software routines in the first place. The
+8087 beats software 32-bit maths; it does not beat good 16-bit maths.
+
+**`docs/raycast.md` got there first and put it more sharply**, in the
+section "Casting in assembler ... and the 8087 stops being worth it": FILD,
+FDIVR, FISTP and FWAIT go through memory in both directions and cost about
+300 cycles against a 16-bit `DIV`'s 90. Its table is `FPU` 10.1 fps against
+`INT` 10.5; re-measured 2026-09-20 on a fresh V30 run, 9.8 against 10.1.
+The ordering and the margin both hold.
+
+**That section and this one used to contradict each other, and the
+contradiction is worth remembering rather than just deleting.** This file
+said the machine had no coprocessor; the raycaster notes were measuring one
+and reasoning carefully about when it was worth using. Both were written
+honestly and one of them was stale -- and nothing in either file could tell
+you which, because neither cited a date or a probe. `FPU.EXE` settles it in
+one run and always could have. **When two documents disagree about the
+hardware, run the probe; do not pick the one that reads better.**
+
+**The probe itself is unaffected**, and it is worth saying why it was never
+in doubt: it seeds the status word and reads it back, so it reports what is
+fitted rather than what anyone expected. It said `no coprocessor` for as long
+as there was none and `Intel 8087` the moment there was one, with no change
+to the code.
 
 Same unit, same rule, but the failure mode is nastier:
 
@@ -142,6 +192,138 @@ built for machines that may have no coprocessor, and x87 arithmetic carries
 `WAIT` prefixes that hang hard when nothing answers. And **`FPU /T` is opt-in**
 for the same reason: a probe wrong in the optimistic direction turns a
 diagnostic into a machine somebody has to walk over to.
+
+## The 386SX's BIOS will not take a date past 2010
+
+**A hardware ceiling, not a fault to fix.** The BIOS on this machine is
+dated 03/25/92 and its setup screen refuses any year later than 2010, so
+every file the box writes is stamped around sixteen years before the fact.
+
+Worth stating plainly because the obvious reading is that its clock has
+drifted and wants correcting. It has not, and **the `SNTP -set` fix that
+straightened the V30's clock does not apply here** -- the BIOS will not hold
+the year, so whatever DOS manages to write to the RTC is good until the next
+cold boot at best. Attempting it wastes a trip and leaves the same dates.
+
+Consequences, both small:
+
+* **Never compare file dates between the two machines.** One is roughly
+  right and the other is far out, so a side-by-side `DIR` makes the 386SX's
+  files look ancient no matter when they were written. That is the only way
+  this misleads anybody.
+* **Nothing in the bridge depends on it.** `dosctl upgrade --tools` decides
+  what to send by comparing sizes, `verify` compares CRC-32, and neither
+  reads a timestamp. `parse_dos_dir` matches the date field only to locate
+  the columns either side of it, and a two-digit year of `10` parses like
+  any other.
+
+## The second box: a Gateway 2000 386SX/25, measured
+
+`BENCH` on the **Gateway 2000 386SX/25** (no 387), 2026-09-19 -- the PicoMEM 1
+was in the machine at the time, which makes no difference here because `BENCH`
+never touches the card --
+against the V30 figures in
+`CLAUDE.md`. Both machines have no coprocessor, so the four x87 rows print
+`skipped` on each.
+
+| | V30 | 386 | |
+|---|---|---|---|
+| loop + increment | 88,961 | 458,021 | 5.1x |
+| 16-bit add | 72,800 | 385,221 | 5.3x |
+| 16-bit multiply | 58,640 | 288,160 | 4.9x |
+| 16-bit divide | 52,561 | 248,721 | 4.7x |
+| 32-bit multiply | 10,920 | 48,521 | 4.4x |
+| 32-bit divide | 7,280 | 30,321 | 4.2x |
+| array[] store | 68,322 | 307,507 | 4.5x |
+| procedure call | 46,501 | 197,160 | 4.2x |
+| shl by CL | 185,021 | 1,028,300 | 5.6x |
+| shl by immediate (186) | 206,260 | 1,108,671 | 5.4x |
+| MemW[] to B800 | 58,640 | 297,260 | 5.1x |
+| REP STOSW to B800 | 439,821 | 1,823,021 | 4.1x |
+
+Roughly **four to five times the V30** across the board, and the two ratios
+the tuning advice rests on are unchanged: 32-bit arithmetic still costs 5-8x
+its 16-bit equivalent, and `REP STOSW` still beats per-element `MemW[]` by
+about 6x. The immediate shift is 8% faster than going through CL here, against
+11% on the V30 -- still not worth a gated fast path on its own.
+
+## The runtime hooks INT 10h, and on a 386 with no 387 that kills the machine
+
+**Found 2026-09-19, on the second box: a Gateway 2000 386SX/25 with a PicoMEM
+1, running the same boot disk image as the V30.** Every Free Pascal tool that touched the screen
+froze it solid, printing nothing at all -- `HWINFO`, `VMODES`, `VSHOT`, and
+`UGET` at the keyboard, which is how it presented: `AI.BAT` stopped dead after
+its `server` line and the box never polled. A hand-assembled 35-byte `.COM`
+doing the same `INT 10h AH=0Fh` returned mode 3 perfectly on that machine,
+which is what finally separated the machine from our software.
+
+**What it is.** FPC's i8086 runtime installs a coprocessor-error handler at
+startup, and it puts that handler on **INT 10h** -- the video BIOS vector --
+as well as on INT 00h and INT 75h. `VECX` read it back:
+
+```
+INT 00 -> 1476:008E   in this program    (divide by zero)
+INT 10 -> 1476:00CA   in this program    <-- video BIOS, hooked
+INT 75 -> 1476:0111   in this program    (IRQ13 coprocessor error)
+```
+
+The handler begins `DD 3E` -- `FNSTSW` -- reads the x87 status word, and if
+bit 7 says an exception is pending it raises a runtime error instead of
+chaining to the video BIOS. With no coprocessor fitted that read is
+meaningless, and **what it returns is not the same on every CPU**:
+
+| | |
+|---|---|
+| 8086 / V30, no 8087 | nothing drives the bus, the word stays 0, the stub chains, all is well |
+| 386, no 387 | the word reads back with bit 7 set, the error path is taken, the call never reaches the BIOS |
+
+So the same binaries that have run on the V30 for months cannot make a single
+video BIOS call on the 386. It is not a 386 instruction problem and not a
+memory-model problem: both were measured and excluded first.
+
+**The fix is `starter/vidfix.pas`**, pulled in by `About` so every tool that
+prints a banner gets it, and added by hand to `UGET` and `UPUT`, which
+deliberately have no banner. It carries its own coprocessor probe rather than
+`uses Cpu`, so it is ONE drop-in file: the same unit is copied into
+`CH375USBTOOLS/src` and pulled in there by `chtool`, which every CH375 program
+uses, with the handful that bypass `chtool` naming it themselves. In its initialization -- which FPC runs before
+the program body, so before any video call -- it acts only when ALL of:
+
+* `Cpu.HasFpu` is false, so the handler cannot have real work to do;
+* INT 10h points into RAM rather than ROM, which the real BIOS never does
+  -- the first version tested "inside the running program's code segment"
+  and was wrong, because a large-model program has SEVERAL code segments
+  and in a big binary the stub sits in a different one from the unit
+  doing the checking.  `CAMLIVE` found INT 10h at 5238:0202, concluded
+  nothing had hooked it, and froze on its first video call anyway;
+* the bytes there are the stub's prologue and start the body with `FNSTSW`;
+* the address the runtime saved can be read back out of the stub and is in
+  ROM (C000 or above).
+
+Then it puts that address back. On the V30 the second test fails, so the unit
+is inert and the same binary is correct on both machines. The saved address is
+not inline: the stub's chain path copies two words out of the runtime's data
+segment over the return address and IRETs, so the unit takes the data segment
+from the `mov bp,imm16` in the prologue and reads the two words that pattern
+names. On the 386 it recovered `C000:729B`, the card's video BIOS.
+
+**Three things this cost, worth not repeating:**
+
+* **Four wrong theories, each measured and dropped**: bad RAM (`MEMCHK` passed
+  all 29 pieces with four patterns), corrupt downloads (a 128 KB file
+  round-tripped byte-identical), the large memory model (a large-model
+  `WriteLn` program ran fine over the bridge), and the `Dos` unit (a
+  large-model program using it ran fine).
+* **The evidence had to survive the crash.** These programs print nothing,
+  because FPC's output sits in a buffer when the machine dies -- even on
+  stderr. The probe that answered it wrote each step to a FILE and closed it
+  each time, so the log could be read after a power cycle. Its last line named
+  the call that never returned.
+* **`dosctl upgrade --tools` re-broke the box** by deploying tools built
+  before the fix, and the agent's own `UGET` was among them, which takes the
+  bridge down with it. When the fix is in the tools themselves, upgrade the
+  transport last, or check the binaries carry it first: `coprocessor, and the
+  stub` appears in every fixed EXE.
 
 ## The CMOS battery is dead, and it breaks power-cycle recovery
 
@@ -354,6 +536,28 @@ what was drawn; it cannot say how fast. `RAYCAST`'s own reported fps and
   faster before making anything else smaller.
 * **The first frame can be stale**, so a snapshot asks for `warmup_frames`
   and keeps the last. Six frames costs a tenth of a second.
+
+## The 386SX had a dead PC speaker, and it was replaced
+
+Found 2026-09-20, while building a tool that beeps to ask the person at the
+machine to type something. Nothing was audible, and the split that settled it
+took one job: five `C:\TOOLS\BEEP.EXE ALERT` in a row -- the kit's own tool,
+long since proven on the V30 -- all returned cleanly and all were silent.
+`BEEP` programs the 8253 and gates port 61h, the same three ports every PC
+speaker has used since 1981, so a clean return with no sound exonerates the
+software. The speaker itself was faulty and a replacement fixed it.
+
+Worth knowing for two reasons. **A beep is the only cue a remote session has
+for somebody standing at the machine**, and without one there is no way to
+tell whether a person did the thing a measurement depends on -- which is the
+difference between a measurement and a guess. And **the PC speaker is not the
+PicoMEM's audio**: the card emulates an AdLib at 388h with its own output,
+so a dead PC speaker says nothing about whether the card's OPL2 is audible,
+and fixing it does not make the card audible either.
+
+The lead is a loose 2-pin or 4-pin flying connector on a header near the
+front-panel block, easy to dislodge when an ISA card goes in or out -- worth
+checking first, before condemning the speaker.
 
 ## HDMI carries the AdLib but NOT the PC speaker
 

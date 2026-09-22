@@ -1,0 +1,36 @@
+{
+  "_": "The DOS machines on this bridge. Copy to boxes.json and edit.",
+  "_absent": "No boxes.json at all is fine and is the default: the bridge",
+  "_absent2": "behaves exactly as it always did, talking to one machine.",
+  "_ids": "A box id is 1-8 characters of a-z0-9. It rides in the TFTP",
+  "_ids2": "resource name as job.<id>, so it must stay 8.3-safe.",
+  "_addr": "\"ip\" is mandatory and must be unique. dosd cross-checks every",
+  "_addr3": "poll against it -- see docs/multibox.md, 'Identity'.",
+  "_periph": "\"capture\" and \"power\" are OVERRIDES on capture.json and",
+  "_periph2": "power.json, which stay the schema. {} means 'this box has it,",
+  "_periph3": "with the shared settings'. Omitting the key, or null, means",
+  "_periph4": "the box does not have one -- and doscap/dospower then REFUSE",
+  "_periph5": "rather than quietly showing you the other machine's screen.",
+  "_expect": "\"expect\" is checked against what the box measures as, once",
+  "_expect2": "per boot. A mismatch is a loud warning, never a reroute.",
+
+  "default": "v30",
+
+  "boxes": {
+    "v30": {
+      "ip": "192.168.1.20",
+      "desc": "NEC V30, MS-DOS 6.22, 8087 fitted",
+      "capture": {},
+      "power": {},
+      "expect": { "cpu": "V30", "fpu": true }
+    },
+
+    "sx386": {
+      "ip": "192.168.1.21",
+      "desc": "Gateway 2000 386SX/25, no 387",
+      "capture": null,
+      "power": null,
+      "expect": { "cpu": "386", "fpu": false }
+    }
+  }
+}

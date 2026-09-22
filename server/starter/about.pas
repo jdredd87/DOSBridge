@@ -31,6 +31,19 @@ function AboutLine: ShortString;
 
 implementation
 
+{ VidFix is pulled in here, rather than added to twenty-nine uses clauses,
+  because it has to run BEFORE the program body on every tool that touches
+  the screen -- and the ones that do are exactly the ones that print a
+  banner. It puts INT 10h back when the runtime has hooked it with a
+  coprocessor stub, which is what froze every video-calling tool on the 386
+  and did nothing at all on the V30. Where nothing is hooked it is inert; see
+  vidfix.pas for the four tests it insists on before touching a vector.
+
+  Order matters and is safe: FPC initializes a unit's dependencies before the
+  unit itself, so VidFix runs before this banner is printed and long before
+  any program body. }
+uses VidFix;
+
 { The compile date comes from FPC's own {$I %DATE%} macro, so there is no
   generation step and nothing to keep in sync.
 

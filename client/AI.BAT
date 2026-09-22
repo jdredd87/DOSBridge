@@ -12,6 +12,25 @@ REM  that points somewhere this machine cannot reach.
 SET SRV=192.168.1.10:8080
 SET UPHOST=192.168.1.10
 
+REM  Which machine this is, when more than one DOS box shares the bridge.
+REM  It rides in the poll's resource name -- `job.v30` instead of `job` --
+REM  so dosd can hand each box its own queue. `dosctl upgrade --agent`
+REM  writes this line from boxes.json, which is the registry dosd routes
+REM  on, so the two cannot disagree.
+REM
+REM  LEAVING IT EMPTY IS FINE and is what every box did before this: dosd
+REM  then routes the poll on the source address alone, which is why a
+REM  second machine can join the bridge without this file being touched at
+REM  all. What the id buys is the cross-check -- a box that says who it is
+REM  AND polls from where it should be lets dosd shout when those two stop
+REM  agreeing, which is what a cloned SD card or a moved card looks like.
+REM
+REM  One variable, not three, and the poll is branched below rather than
+REM  built from it. The environment on this box is nearly full, and a SET
+REM  that fails with "Out of environment space" would leave a name half
+REM  built -- a poll for `job.` that no dosd will ever answer.
+SET BOXID=
+
 REM  TZ lives here and not in AUTOEXEC.BAT: a mistake in AUTOEXEC.BAT breaks
 REM  the network before the agent runs and needs hands on the keyboard, while
 REM  a mistake here is fixable over the wire. mTCP refuses to stamp file
@@ -148,7 +167,18 @@ REM  and jobs start disappearing.
 REM
 REM  UGET draws a spinner in place while it waits, so an idle box still
 REM  shows a pulse without scrolling the banner above away.
+REM
+REM  Two lines rather than one built from a variable. `job.%BOXID%` with an
+REM  empty BOXID asks for `job.`, which is a name no dosd serves, and the
+REM  box would poll for ever getting nothing -- a silent machine, and the
+REM  one failure mode here that costs a trip to the keyboard. A branch
+REM  cannot half-work that way.
+IF "%BOXID%"=="" GOTO POLLANY
+C:\TOOLS\UGET.EXE %UPHOST% job.%BOXID% C:\AGENT\JOB.BAT POLL
+GOTO POLLED
+:POLLANY
 C:\TOOLS\UGET.EXE %UPHOST% job C:\AGENT\JOB.BAT POLL
+:POLLED
 REM  There is NO fallback here, and that is the point: this machine needs
 REM  no part of mTCP to do its job. The HTGET line that used to sit here
 REM  was removed on 2026-09-02 after the poll was measured clean over a

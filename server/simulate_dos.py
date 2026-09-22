@@ -31,9 +31,55 @@ import sys
 import time
 import urllib.request
 
-SRV = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1:8080"
+SRV = "127.0.0.1:8080"
+BOXID = ""
+LOCAL = ""
+for _a in sys.argv[1:]:
+    if _a.startswith("--box="):
+        BOXID = _a.split("=", 1)[1].strip().lower()
+    elif _a.startswith("--from="):
+        LOCAL = _a.split("=", 1)[1].strip()
+    elif not _a.startswith("-"):
+        SRV = _a
 HOST = SRV.split(":")[0]
 TFTP_PORT = int(os.environ.get("DOSD_TFTP_PORT", "8069"))
+
+# The resource name this box polls under. `--box=v30` makes it `job.v30`,
+# which is exactly what AI.BAT does with SET BOXID= -- one daemon, one UDP
+# port, identity in the NAME. Without it the name is the bare `job` every
+# agent built before multi-box support sends, and dosd routes it on the
+# source address instead.
+#
+# It matters that this is the same string the real agent puts on the wire.
+# The previous version of this simulator pattern-matched the batch and
+# fetched over HTTP, so when the transport moved it kept passing while
+# transferring nothing at all. A simulator that models its own idea of the
+# protocol is worth less than no simulator, because it is counted as
+# evidence.
+JOB_NAME = ("job." + BOXID) if BOXID else "job"
+
+
+def udp():
+    """A UDP socket, bound to this box's own source address if it has one.
+
+    `--from=127.0.0.2` is how two simulated boxes get two ADDRESSES on one
+    machine, and it is not cosmetic. Several pieces of dosd's transport
+    state are keyed on the source IP -- the in-flight flow registry in
+    particular, where a fresh request for a file already being sent to that
+    address deliberately supersedes the older transfer, because that is how
+    a stalled transfer recovers. Two boxes sharing 127.0.0.1 therefore
+    cancel each other's fetches whenever they ask for the same file at the
+    same moment, which is exactly what a fan-out does.
+
+    Real machines have distinct addresses -- boxes.json refuses to register
+    two at one address, precisely because it cannot be made to work -- so
+    the loopback alias is what keeps the simulation honest rather than a
+    limitation being papered over.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if LOCAL:
+        s.bind((LOCAL, 0))
+    return s
 
 FAKE_STDOUT = ("network card probe\nIO=0x300 IRQ=3\n"
                "Packets RX=41 TX=39\nAll checks passed\n")
@@ -73,7 +119,7 @@ def tftp_get(name, blk_want=BLK_WANT, timeout=10, tries=5):
     port -- TFTP's transfer identifier -- so the reply address is locked onto
     after the first packet and 8069 is never written to again.
     """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s = udp()
     s.settimeout(timeout)
     try:
         req = _rq(OP_RRQ, name, blk_want)
@@ -140,7 +186,7 @@ def tftp_get(name, blk_want=BLK_WANT, timeout=10, tries=5):
 
 def tftp_put(name, blob, blk_want=BLK_WANT, timeout=10, tries=5):
     """Send `blob` to dosd under `name`. Returns True on success."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s = udp()
     s.settimeout(timeout)
     try:
         req = _rq(OP_WRQ, name, blk_want)
@@ -206,14 +252,22 @@ def tftp_put(name, blob, blk_want=BLK_WANT, timeout=10, tries=5):
 
 def send_result_tcp(text):
     """The legacy result path, kept so this still drives an older dosd."""
-    s = socket.create_connection((HOST, 8081), timeout=10)
+    s = socket.create_connection((HOST, 8081), timeout=10,
+                                 source_address=(LOCAL, 0) if LOCAL else None)
     s.sendall(text.replace("\n", "\r\n").encode("cp437", "replace"))
     s.shutdown(socket.SHUT_WR)
     s.close()
 
 
+def say(msg):
+    """Prefixed with the box id, because two simulated boxes share one
+    console and an interleaved log with nothing saying which machine each
+    line came from is the text version of the bug this all guards against."""
+    print(("[%s] " % BOXID if BOXID else "") + msg, flush=True)
+
+
 def run_batch(bat):
-    print("---- JOB.BAT ----\n%s----------------" % bat)
+    say("---- JOB.BAT ----\n%s----------------" % bat)
     m = re.search(r"ECHO ##JOB=(\w+)", bat)
     job_id = m.group(1) if m else None
     reported = False
@@ -225,10 +279,10 @@ def run_batch(bat):
             name, dest = m.group(1), m.group(2)
             data = tftp_get(name)
             if data is None:
-                print("   FETCH FAILED %s" % name)
+                say("   FETCH FAILED %s" % name)
                 return
             DISK[dest.upper()] = data
-            print("   fetched %s -> %s (%d bytes)" % (name, dest, len(data)))
+            say("   fetched %s -> %s (%d bytes)" % (name, dest, len(data)))
             continue
 
         m = re.search(r"HTGET -o (\S+) (http://\S+)", line)
@@ -237,10 +291,10 @@ def run_batch(bat):
             try:
                 data = urllib.request.urlopen(url, timeout=10).read()
             except Exception as e:
-                print("   FETCH FAILED %s: %s" % (url, e))
+                say("   FETCH FAILED %s: %s" % (url, e))
                 return
             DISK[dest.upper()] = data
-            print("   fetched %s (%d bytes)" % (url, len(data)))
+            say("   fetched %s (%d bytes)" % (url, len(data)))
             continue
 
         # --- send: UPUT ---------------------------------------------------
@@ -258,8 +312,8 @@ def run_batch(bat):
                             % (job_id, FAKE_STDOUT, FAKE_RC))
                     ok = tftp_put("result", body.replace("\n", "\r\n")
                                   .encode("cp437", "replace"))
-                    print("   reported result for %s%s"
-                          % (job_id, "" if ok else "  (FAILED)"))
+                    say("   reported result for %s%s"
+                        % (job_id, "" if ok else "  (FAILED)"))
                     reported = reported or ok
             else:
                 # A pull: hand back whatever that path holds. Falling back to
@@ -269,8 +323,8 @@ def run_batch(bat):
                                 b"simulated contents of " +
                                 src.encode("cp437", "replace") + b"\r\n")
                 ok = tftp_put(name, blob)
-                print("   sent %s as %s (%d bytes)%s"
-                      % (src, name, len(blob), "" if ok else "  (FAILED)"))
+                say("   sent %s as %s (%d bytes)%s"
+                    % (src, name, len(blob), "" if ok else "  (FAILED)"))
             continue
 
     if job_id and not reported:
@@ -280,14 +334,14 @@ def run_batch(bat):
         try:
             send_result_tcp("##JOB=%s\n%s##RC=%d\n"
                             % (job_id, FAKE_STDOUT, FAKE_RC))
-            print("   reported result for %s (legacy 8081)" % job_id)
+            say("   reported result for %s (legacy 8081)" % job_id)
         except Exception as e:
-            print("   result FAILED for %s: %s" % (job_id, e))
+            say("   result FAILED for %s: %s" % (job_id, e))
 
 
 def poll():
     """One job poll. TFTP first, HTTP if that is not answering."""
-    bat = tftp_get("job", blk_want=0, timeout=20, tries=1)
+    bat = tftp_get(JOB_NAME, blk_want=0, timeout=20, tries=1)
     if bat is not None:
         return bat.decode("cp437")
     return urllib.request.urlopen(
@@ -295,12 +349,13 @@ def poll():
 
 
 def main():
-    print("simulated DOS box polling %s  (TFTP udp/%d)" % (SRV, TFTP_PORT))
+    print("simulated DOS box%s polling %s as %r  (TFTP udp/%d)"
+          % (" " + BOXID if BOXID else "", SRV, JOB_NAME, TFTP_PORT))
     while True:
         try:
             bat = poll()
         except Exception as e:
-            print("poll failed: %s" % e)
+            say("poll failed: %s" % e)
             time.sleep(3)
             continue
         if bat is None or "REM idle" in bat:

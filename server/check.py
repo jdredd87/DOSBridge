@@ -120,7 +120,16 @@ if not ROOT_OK:
     print(r"  dosd.py), or from Installer\server\ in the repo. Copying")
     print(r"  only Installer\ somewhere else leaves it nothing to check.")
     print()
-for f in ("dosd.py", "dosctl.py", "dosrun.cmd", "dosdeploy.cmd", "dospull.cmd"):
+# boxes.py is in this list for a reason worth keeping: dosd.py and dosctl.py
+# both `import boxes` at module level, so a kit built without it has a daemon
+# that dies on its first line -- and the build itself would say nothing,
+# because the packaging works from an explicit file list that nothing checks
+# against the imports. It was caught by reading makekit.py before the first
+# multi-box release rather than by a kit shipping broken; this line is what
+# would catch the next one. A required import belongs in the presence check,
+# not only in the copy list.
+for f in ("dosd.py", "dosctl.py", "boxes.py",
+          "dosrun.cmd", "dosdeploy.cmd", "dospull.cmd"):
     line("ok" if os.path.isfile(os.path.join(ROOT, f)) else "FAIL",
          f, ROOT)
 files_dir = os.path.join(ROOT, "files")
@@ -178,7 +187,13 @@ if fpc_root:
 head("Firewall")
 try:
     ps = ("$r = Get-NetFirewallRule -Direction Inbound -Enabled True "
-          "-ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match 'dosbridge' }; "
+          # 'dos ?bridge' rather than 'dosbridge': the rules dosfirewall.ps1
+          # creates read "dosbridge: ..." but a hand-made rule is as likely
+          # to be called "DOS Bridge", and the space defeated the old
+          # pattern. That combination reported a correctly configured
+          # firewall as unconfigured -- the tool telling you something
+          # false, which is worse than it staying quiet.
+          "-ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match 'dos ?bridge' }; "
           "if ($r) { foreach ($x in $r) { "
           "$p = $x | Get-NetFirewallPortFilter; "
           "Write-Output ($x.DisplayName + '|' + $x.Profile + '|' + $p.LocalPort) } } "

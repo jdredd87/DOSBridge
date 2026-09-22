@@ -158,3 +158,39 @@ Use it after `dosdrv`, and note it only matches *character* devices by name.
 `HD` reads binaries that `TYPE` truncates at the first 0x1A. Its CRC-32 matches
 Python's `zlib.crc32`, verified on a 25872-byte file, so a deployed file can be
 checked against the Windows copy without transferring it.
+
+## PIT channel 0 is in MODE 3, so sub-tick timing is ambiguous by half a tick
+
+**Found on 2026-09-21 while chasing a frame-timing problem in
+`starter/parallax.pas`.** `starter/prof.pas` gets its resolution by latching PIT
+channel 0 and pairing the counter with the BIOS tick, and so did a stopwatch
+written in that project. Both are wrong below about 30ms, and for the same
+reason.
+
+The BIOS programs channel 0 in **mode 3, square wave**. In that mode the
+counter is decremented by two and reloaded when it reaches zero, so it sweeps
+its whole range **twice per tick** -- once per half-cycle of the output. Reading
+it tells you how far through a *half* tick you are and nothing about which
+half. Every sub-tick reading is therefore ambiguous by up to **27.5ms**.
+
+What that looks like in practice:
+
+* The same unchanged band repaint measured **13.2ms** and then **24.4ms** on
+  consecutive builds, bimodally, with nothing between.
+* Per-frame figures never reconciled with their own mean -- 75% of frames
+  "over budget" while the mean sat comfortably under it.
+* `ProfReport`'s section percentages sum to about **140%** of its own elapsed
+  time, which is the same error showing up as apparently overlapping sections.
+
+**It does not affect long measurements.** The coprocessor-versus-integer race
+in `starter/parallax.pas` runs for seconds, where 27.5ms is noise, and its
+numbers are sound. The rule is: trust channel 0 over intervals much longer than
+half a tick, and not at all over a frame.
+
+Fixing it properly means a free-running counter of your own on **channel 2**,
+gated through port 61h -- channel 2 drives the speaker, so it is free whenever
+the sound is coming from an OPL2 rather than the beeper. That has not been
+done. The frame timing that prompted this was settled off the capture card
+instead, which has no such ambiguity: quarter the region, difference successive
+frames, and look at whether all the quarters move together.
+

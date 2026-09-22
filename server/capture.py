@@ -218,6 +218,27 @@ def _run(argv, timeout, expect_file=None):
 
 # --------------------------------------------------------------- config ---
 
+# Which DOS box this process is capturing, and what it overrides.
+#
+# capture.json stays the schema and this supplies per-box overrides on top of
+# it. That split is deliberate: about twenty of the fields in there --
+# rtbufsize, preset, warmup_frames, open_timeout -- are properties of the
+# capture stick and this PC rather than of any DOS box, and duplicating them
+# per machine guarantees they drift. Genuinely per box: device,
+# audio_device, out_dir.
+_SCOPE = {"box": None, "over": {}}
+
+
+def set_scope(box, over=None):
+    """Capture this box from now on. box=None is the single-machine case."""
+    _SCOPE["box"] = box
+    _SCOPE["over"] = dict(over or {})
+
+
+def scope_box():
+    return _SCOPE["box"]
+
+
 def load(path=None):
     """Read capture.json. Returns None when the feature is not configured,
     which is the normal answer -- no capture.json ships with the installer."""
@@ -236,6 +257,10 @@ def load(path=None):
     # Keys beginning with _ are comments, the same convention power.json uses
     # for a format that has none.
     cfg.update({k: v for k, v in raw.items() if not k.startswith("_")})
+    cfg.update({k: v for k, v in _SCOPE["over"].items()
+                if not k.startswith("_")})
+    if _SCOPE["box"]:
+        cfg["box"] = _SCOPE["box"]
     if not cfg.get("device"):
         raise CaptureError("%s has no \"device\" -- run `doscap devices`"
                            % path)
@@ -401,8 +426,18 @@ def burst(cfg, count, every, prefix=None):
 
 
 def _audio_pidfile(cfg):
+    """One pidfile per DEVICE, not one per machine.
+
+    Two capture sticks can preview at once and each needs its own ffplay
+    tracked separately; a single pidfile would make the second preview kill
+    the first one's audio. Keyed on the box when there is one, because that
+    is what names the device here -- and the bare name is kept for the
+    single-machine case so an ffplay started before this change is still
+    found and cleaned up.
+    """
     d = cfg.get("out_dir") or os.path.join(HERE, "capture")
-    return os.path.join(d, "live-audio.pid")
+    box = cfg.get("box") or _SCOPE["box"]
+    return os.path.join(d, "live-audio%s.pid" % ("-" + box if box else ""))
 
 
 def _is_ffplay(pid):

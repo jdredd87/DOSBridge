@@ -123,6 +123,9 @@ pulls in with `uses`; everything else builds to an `.EXE` of the same name.
 | `svgatext.pas` | rotating text; VBE 640x480x256 if offered, else mode 13h |
 | `scroller.pas` | mode X scroller: sprites, AdLib music, 70 fps. See `SCROLLER.md` |
 | `music.pas` | the scroller's tune, driven from inside a frame loop |
+| `parallax.pas` | NEON DRIFT: split-screen parallax, hovercars, OPL2. See `PARALLAX.md` |
+| `retro.pas` | NEON DRIFT's four-voice chiptune, non-blocking and tick-driven |
+| `pmdet.pas` | is there a PicoMEM, and what is it? Strictly read-only |
 | `mystery.pas` | the raycaster's theme: chromatic bass, a tritone, and no resolution |
 | `gtest.pas` | mode 13h test pattern, leaves the mode set for `VSHOT` |
 | `mozart.pas` | Eine kleine Nachtmusik on the PC speaker, one voice |
@@ -331,7 +334,8 @@ Three tests, in an order that matters:
   immediate shift in `BENCH` executes and measures ~11% faster than the CL
   form. The gate works end to end.
 * Step 3 (shift-count masking) has **still never executed**, because `AAD`
-  answers NEC first and short-circuits it. Treat a 186/286/386 result as
+  answers NEC first and short-circuits it. The 386 branch is confirmed on a
+  Gateway 2000 386SX/25 (reports `cpu386`, `Has186` true). Treat a 186/286 result as
   unconfirmed until someone runs `SYSINFO` on one of those.
 * The coprocessor probe runs on a machine with none fitted without hanging —
   the risk that mattered. `FPU.EXE` reports `none` and exits 1.

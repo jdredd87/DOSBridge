@@ -111,6 +111,29 @@ class PowerError(Exception):
 # Configuration
 # ---------------------------------------------------------------------------
 
+# Which DOS box this process is switching, and what it overrides.
+#
+# power.json stays the schema; boxes.json supplies per-box overrides. Only
+# `host` and `channel` are genuinely per box -- model, max_cycles,
+# window_secs and min_interval_secs are policy and stay shared.
+#
+# The CYCLE HISTORY is per box and that is not cosmetic: the rate limit
+# exists to stop a recovery loop hammering a machine that power is not
+# fixing, and if one box's cycles ate the other's budget the guard would
+# refuse a machine it had never touched and allow one it had.
+_SCOPE = {"box": None, "over": {}}
+
+
+def set_scope(box, over=None):
+    """Switch this box from now on. box=None is the single-machine case."""
+    _SCOPE["box"] = box
+    _SCOPE["over"] = dict(over or {})
+
+
+def scope_box():
+    return _SCOPE["box"]
+
+
 def load(path=None):
     """Return the plug config, or None if the feature is not set up.
 
@@ -136,6 +159,10 @@ def load(path=None):
     # Comment keys, so the example file can explain itself in a format with
     # no comment syntax.
     cfg.update({k: v for k, v in raw.items() if not k.startswith("_")})
+    cfg.update({k: v for k, v in _SCOPE["over"].items()
+                if not k.startswith("_")})
+    if _SCOPE["box"]:
+        cfg["box"] = _SCOPE["box"]
     if not cfg.get("model"):
         raise PowerError("%s has no \"model\"" % path)
     return cfg
@@ -428,19 +455,40 @@ def driver(cfg):
 # Rate limiting, persisted
 # ---------------------------------------------------------------------------
 
-def _read_state():
+def _state_key():
+    """The key this box's cycle history is filed under.
+
+    "cycles" is the single-machine history and is kept as the key for a box
+    with no id, so an existing power.state carries over unchanged rather
+    than resetting a rate limit that may be the only thing standing between
+    a wedged machine and a loop of hard power cuts.
+    """
+    box = _SCOPE["box"]
+    return ("cycles:" + box) if box else "cycles"
+
+
+def _read_all():
     try:
         with open(STATE_PATH, "r", encoding="utf-8") as fh:
             s = json.load(fh)
-        return [float(t) for t in s.get("cycles", [])]
+        return s if isinstance(s, dict) else {}
     except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _read_state():
+    try:
+        return [float(t) for t in _read_all().get(_state_key(), [])]
+    except (ValueError, TypeError):
         return []
 
 
 def _write_state(cycles):
+    s = _read_all()
+    s[_state_key()] = cycles[-50:]
     try:
         with open(STATE_PATH, "w", encoding="utf-8") as fh:
-            json.dump({"cycles": cycles[-50:]}, fh)
+            json.dump(s, fh)
     except OSError:
         pass
 
@@ -486,9 +534,22 @@ def note_cycle(now=None):
 
 
 def reset_history():
-    """Forget the cycle history -- for when a real fix has been applied."""
+    """Forget this box's cycle history -- for when a real fix is applied.
+
+    Scoped, so clearing the V30's history cannot quietly hand the 386 a
+    fresh budget it did not earn.
+    """
+    if not _SCOPE["box"]:
+        try:
+            os.remove(STATE_PATH)
+        except OSError:
+            pass
+        return
+    s = _read_all()
+    s.pop(_state_key(), None)
     try:
-        os.remove(STATE_PATH)
+        with open(STATE_PATH, "w", encoding="utf-8") as fh:
+            json.dump(s, fh)
     except OSError:
         pass
 

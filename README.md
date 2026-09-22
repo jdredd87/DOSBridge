@@ -1,6 +1,6 @@
-# DOS Bridge — build 62
+# DOS Bridge — build 65
 
-_Built 2026-09-16 from `C:\dosbridgeDEV`._
+_Built 2026-09-22 from `C:\dosbridgeDEV`._
 
 Run and test DOS software on a real 8086-class DOS machine from your Windows
 command line, over whatever network card that machine has. Claude Code drives
@@ -252,7 +252,7 @@ dosctl upgrade --dry-run              what would change on the DOS box
 dosctl upgrade                        send new tools + agent, then reboot
 dosctl version                        what build the DOS machine is running
 dosctl verify                         CRC-32 every tool on the box
-makeinst.cmd                          build C:\DosBridgeInstaller
+makeinst.cmd                          build the installer (into ..Installer\)
 ```
 
 Your own work goes in `projects\NAME\`, never in `starter\` (reserved for the
@@ -652,8 +652,8 @@ docs/             the long-form reference: the tools, the hardware, the
                   graphics work, the raycaster, keyboard injection, the
                   network stack and the agent loop. One subject per file
 installer-src/    authored installer scripts. `makeinst.cmd` turns these
-                  plus the tree below into C:\DosBridgeInstaller -- nothing
-                  generated is kept in here
+                  plus the tree below into the installer folder beside this
+                  one -- nothing generated is kept in here
 projects/         your own work; one folder per project, made by `dosnew NAME`
 starter/          FPC cross-compiler setup, test harness, worked examples.
                   Reserved for the bridge's own tools, not for new projects
