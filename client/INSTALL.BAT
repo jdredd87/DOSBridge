@@ -53,6 +53,10 @@ ECHO [2/4] Agent loop  -^> C:\AI
 REM --- tools ---------------------------------------------------------
 IF NOT EXIST *.EXE GOTO NOTOOLS
 COPY *.EXE C:\TOOLS > NUL
+REM  The demos (RAYCAST, PARALLAX, ...) travel in DEMOS\ to keep this folder
+REM  to the tools, but install beside them, as they always have: the Windows
+REM  side's upgrade and verify look for them in C:\TOOLS.
+IF EXIST DEMOS\*.EXE COPY DEMOS\*.EXE C:\TOOLS > NUL
 REM  The .COM tools need naming one by one: the wildcard above only takes
 REM  .EXE, and a bare "COPY *.COM" would drag REBOOT.COM and COLDBOOT.COM in
 REM  with them -- those belong to the agent in C:\AI and were placed above.

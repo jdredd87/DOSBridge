@@ -1,7 +1,7 @@
 # Graphics plumbing: the VGA unit, mode X, and sound
 
 The shared units the demos are built on. The raycaster's own story is
-in `raycast.md`; the scroller's is in `starter/SCROLLER.md`.
+in `raycast.md`; the scroller's is in `starter/demos/SCROLLER.md`.
 
 Split out of `CLAUDE.md`, which keeps the summary and the pointer here.
 
@@ -59,8 +59,8 @@ work whichever way the card came up.
 
 ## Smooth scrolling: mode X, and why the frame rate is quantised
 
-`starter/scroller.pas` is a side-scrolling landscape with sprites and AdLib
-music, and `starter/modex.pas` is the reusable half: unchained
+`starter/demos/scroller.pas` is a side-scrolling landscape with sprites and AdLib
+music, and `starter/demos/modex.pas` is the reusable half: unchained
 320x200x256 with a virtual screen wider than the display. Verified on hardware
 2026-09-01 -- 2096 frames in 30.00s, **69.8 fps, one vertical refresh per
 frame, zero late frames**, which is as fast as a 320x200 VGA goes.
@@ -168,7 +168,7 @@ picture into noise.
 
 ## The pixel pan is latched a refresh later than the start address
 
-**Measured on the V30 on 2026-09-21, in `starter/parallax.pas`.** `ModeX.ShowAt`
+**Measured on the V30 on 2026-09-21, in `starter/demos/parallax.pas`.** `ModeX.ShowAt`
 sets the start address, waits for the vertical retrace, and then sets the
 Attribute Controller's pixel pan -- and the comment in `modex.pas` says that
 order matters because the CRTC latches the start address at the top of the
@@ -195,7 +195,7 @@ period, and no other quantity in the demo has that. The size alone could have
 been anything.
 
 The fix is to write the pan *before* waiting for the retrace, with the start
-address, so both are latched by the same one. `starter/parallax.pas` does that
+address, so both are latched by the same one. `starter/demos/parallax.pas` does that
 in its own `ShowFar`; `modex.pas` has NOT been changed, because `scroller.pas`
 depends on it and its frame budget is documented and verified. **Anything that
 scrolls a mode X layer at one pixel a frame will show this**, and scroller
@@ -217,13 +217,13 @@ number of refreshes before waiting for the retrace -- a frame that was going to
 be short spins, one that already overran does not wait at all. **Padding is not
 throttling**: the budget it pads to is the one the beam already imposes.
 
-## Sound while something else is running: `starter/opl2.pas`
+## Sound while something else is running: `starter/demos/opl2.pas`
 
 `AMOZART` plays a tune and does nothing else, so it can key a note and wait.
 Anything with a frame loop cannot, and that is the whole difficulty. The unit
 holds the parts that are about the chip rather than the music: `OplDetect`
 (the timer method), `OplWrite`, `OplVoice`, `OplNoteOn`/`Off`, `OplSilence`.
-`starter/music.pas` is the worked example of driving it from a frame
+`starter/demos/music.pas` is the worked example of driving it from a frame
 loop. Note `amozart.pas` predates the unit and still carries its own copy.
 
 Three things learned wiring music into the scroller:

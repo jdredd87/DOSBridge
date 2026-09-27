@@ -1,6 +1,6 @@
 # The raycaster: every measurement, and what it cost
 
-`starter/raycast.pas` from 4.2 to 44.7 fps, with the wrong turns kept.
+`starter/demos/raycast.pas` from 4.2 to 44.7 fps, with the wrong turns kept.
 The most useful performance document here -- most of its lessons are
 about measuring on an 8086, not about raycasting.
 
@@ -8,7 +8,7 @@ Split out of `CLAUDE.md`, which keeps the summary and the pointer here.
 
 ## The raycaster, and where the time actually goes
 
-`starter/raycast.pas` is a Wolfenstein-style raycaster in mode 13h. It walks
+`starter/demos/raycast.pas` is a Wolfenstein-style raycaster in mode 13h. It walks
 itself round a 16x16 maze -- there is nobody at the keyboard over the bridge --
 and prints its own stats, the maze with the cells it visited, and an ASCII
 thumbnail read back out of A000, so the whole run is checkable from Windows.
@@ -461,7 +461,7 @@ different" would be reading a code path, not a rendering difference.
 Doing this properly needs textures at 2 px a column, which today is not a
 switch -- it is lifting the mode 13h restriction on the texture blitter.
 
-## Driving it: `KEYS`, `PLAY`, and `starter/kbd.pas`
+## Driving it: `KEYS`, `PLAY`, and `starter/demos/kbd.pas`
 
 `RAYCAST KEYS` puts a person at the controls -- W/S or the arrows to move,
 A/D to turn, Q/E to strafe, Shift to run, Esc to quit.
@@ -476,7 +476,7 @@ key repeats at all) and with no concept of a release. Drive a camera from it
 and the first half second of every movement is one lurch and then a pause,
 which reads as a dropped frame rather than as input.
 
-So `starter/kbd.pas` hooks INT 9 and keeps a byte per scancode. The handler
+So `starter/demos/kbd.pas` hooks INT 9 and keeps a byte per scancode. The handler
 is four instructions; everything careful in the unit is about giving the
 vector back.
 
@@ -516,7 +516,7 @@ intentions**, and the movement code cannot tell which:
 dosexec "C:\TOOLS\RAYCAST.EXE PLAY C:\WORK\WALK.TXT SECS 20"
 ```
 
-`starter/mkwalk.py` writes one: `python mkwalk.py S2 E6 S6 E4` emits the
+`starter/demos/mkwalk.py` writes one: `python mkwalk.py S2 E6 S6 E4` emits the
 timed events for "south two cells, east six, south six, east four". Verified
 on hardware -- the camera walked exactly that route, 19 cells, and stopped
 on its own `+QUIT`.

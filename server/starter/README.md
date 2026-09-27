@@ -55,6 +55,9 @@ FPC uses an external assembler for the i8086 target.
 
 Every `.pas` here, grouped by what it is for. Units are the shared ones a tool
 pulls in with `uses`; everything else builds to an `.EXE` of the same name.
+The tools are in this folder; the **demos**, and the units only they use, are
+in **`demos\`**. `build.cmd` looks in both, and everything builds into the one
+`build\`.
 
 **Units**
 
@@ -66,7 +69,6 @@ pulls in with `uses`; everything else builds to an `.EXE` of the same name.
 | `vga.pas` | mode 13h plumbing: `SetMode`, `FillSpan`, palette, retrace |
 | `prof.pas` | section timing and a stack watermark, PIT-resolution |
 | `net.pas` | IPv4 + UDP on the packet driver -- no mTCP. Always `NetClose` |
-| `modex.pas` | unchained 320x200x256, virtual screen wider than the display |
 
 **Machine and diagnostics**
 
@@ -87,7 +89,6 @@ pulls in with `uses`; everything else builds to an `.EXE` of the same name.
 | `beep.pas` | PC speaker; `ALERT` when a human is needed |
 | `mkkeyhit.py` | **not Pascal** -- emits the 22-byte `KEYHIT.COM` the agent polls |
 | `elapsed.asm` | **not Pascal** -- NASM. `ELAPSED.COM`, the job stopwatch behind the console's footer line. `cpu 8086` makes the assembler enforce the baseline; MNASMFIX-compatible so it also builds on the box |
-| `opl2.pas` | AdLib / OPL2 plumbing: detect, register writes, patches, notes |
 
 **Video**
 
@@ -98,6 +99,7 @@ pulls in with `uses`; everything else builds to an `.EXE` of the same name.
 | `vesachk.pas` | what the VESA BIOS claims to offer |
 | `scrape.pas` | capture the text screen back through DOS |
 | `vshot.pas` | capture a mode 13h screen as ASCII art |
+| `gtest.pas` | mode 13h test pattern, leaves the mode set for `VSHOT` |
 
 **Networking** — no TCP/IP stack; these talk to the packet driver directly
 
@@ -111,11 +113,17 @@ pulls in with `uses`; everything else builds to an `.EXE` of the same name.
 | `uget.pas` | `UGET`: fetch from dosd over UDP. Replaces mTCP's `HTGET` |
 | `uput.pas` | `UPUT`: send to dosd over UDP. Replaces mTCP's `NC` |
 
-**Demos**
+**The worked example** -- here, not in `demos\`: it is what `build.cmd` and
+`test.cmd` build when given no name
 
 | | |
 |---|---|
 | `hello.pas` | smoke test, deliberately fails one check |
+
+**Demos** -- in `demos\`, with the units only they use
+
+| | |
+|---|---|
 | `raycast.pas` | Wolfenstein-style raycaster; no divides in the DDA, `REP STOSB` blitter, 8087 for the perspective divide |
 | `fractal.pas` | Mandelbrot, Q8 integer or 8087, with `ZOOM` |
 | `balls.pas` | bouncing balls in mode 13h |
@@ -127,7 +135,9 @@ pulls in with `uses`; everything else builds to an `.EXE` of the same name.
 | `retro.pas` | NEON DRIFT's four-voice chiptune, non-blocking and tick-driven |
 | `pmdet.pas` | is there a PicoMEM, and what is it? Strictly read-only |
 | `mystery.pas` | the raycaster's theme: chromatic bass, a tritone, and no resolution |
-| `gtest.pas` | mode 13h test pattern, leaves the mode set for `VSHOT` |
+| `kbd.pas` | INT 9 key state, for `RAYCAST KEYS`; `mkwalk.py` writes `RAYCAST PLAY` scripts, `walk.txt` is one |
+| `modex.pas` | unit: unchained 320x200x256, virtual screen wider than the display |
+| `opl2.pas` | unit: AdLib / OPL2 plumbing: detect, register writes, patches, notes |
 | `mozart.pas` | Eine kleine Nachtmusik on the PC speaker, one voice |
 | `amozart.pas` | the same in two voices on an AdLib/OPL2, detected first |
 | `proftest.pas` | exercises the `Prof` unit |
@@ -136,7 +146,7 @@ pulls in with `uses`; everything else builds to an `.EXE` of the same name.
 
 | | |
 |---|---|
-| `build.cmd` | `build.cmd sysinfo` → compiles to `build\SYSINFO.EXE` |
+| `build.cmd` | `build.cmd sysinfo` → compiles to `build\SYSINFO.EXE`; `build.cmd raycast` finds `demos\raycast.pas` |
 | `test.cmd` | `test.cmd sysinfo` → compiles *and* runs it on the DOS machine |
 
 Start with `test.cmd hello`. It should report one pass, one deliberate failure,

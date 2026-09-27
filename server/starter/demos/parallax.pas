@@ -10,7 +10,7 @@ program Parallax;
 
   WHAT MAKES THE PARALLAX REAL
 
-  starter/scroller.pas says, correctly, that its parallax is fake: one CRTC
+  starter/demos/scroller.pas says, correctly, that its parallax is fake: one CRTC
   start address moves the whole screen, so a single bitmap can only scroll at
   a single rate, and the depth you see there comes entirely from sprites.
   This demo gets genuinely independent layers out of the same hardware by
@@ -1606,7 +1606,7 @@ end;
 
 { One column group of one sprite: Rows rows of up to SPR_K consecutive bytes,
   source stride SPR_K, destination stride VWB.  Lifted from
-  starter/scroller.pas, where the history is recorded: the first version
+  starter/demos/scroller.pas, where the history is recorded: the first version
   tested and stored one pixel at a time and cost 60% of the whole frame.
   Transparency comes from the precomputed run rather than a test per pixel,
   so the fast path stays a string operation. }

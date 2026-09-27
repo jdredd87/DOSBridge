@@ -46,7 +46,7 @@ all fixed here:
 
 ## The parallax is real, and that is the point
 
-`starter/scroller.pas` says, correctly, that its parallax is fake: one CRTC
+`starter/demos/scroller.pas` says, correctly, that its parallax is fake: one CRTC
 start address moves the whole screen, so a single bitmap scrolls at a single
 rate, and all the depth there comes from sprites.
 
@@ -249,7 +249,7 @@ after    every step 1.1, no glitch in 34 consecutive frames
 and nothing else in the demo has it; the size alone could have been anything.
 The fix is to write the pan *before* the retrace wait so both latch together.
 
-`starter/modex.pas` is deliberately **not** changed -- `scroller.pas` depends on
+`starter/demos/modex.pas` is deliberately **not** changed -- `scroller.pas` depends on
 it and its frame budget is documented and verified -- but anything scrolling a
 mode X layer a pixel a frame will show this. It is written up in
 `docs/graphics.md`.
@@ -401,7 +401,7 @@ suite's own. `About` pulls in `VidFix`, which matters here: FPC's i8086 runtime
 hooks INT 10h, and on a 386 with no 387 that wedges the machine on the first
 video BIOS call.
 
-**`starter/modex.pas` is deliberately not modified.** Its `ShowAt` has the
+**`starter/demos/modex.pas` is deliberately not modified.** Its `ShowAt` has the
 pixel-pan ordering bug described above, and `scroller.pas` depends on its
 measured frame budget; `ShowFar` here is a local copy with the fix. Both are
 written up in `docs/graphics.md`.

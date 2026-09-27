@@ -172,8 +172,8 @@ its own long history lives beside it:
 | `docs/multibox.md` | **BUILT 2026-09-21.** Two or more DOS boxes on one bridge. **Part 1 is the operating manual** -- how a poll finds its box, what is per box and what must never be, and a step-by-step setup for a second machine. Part 2 is the design record. Read Part 1 before adding a box or debugging one |
 | `capture.md` | running the capture card: live preview, stills, recording |
 | `knet.md` | the live remote keyboard, and its four hazards |
-| `starter/SCROLLER.md` | the mode X scroller |
-| `starter/PARALLAX.md` | NEON DRIFT: real per-row parallax off the CRTC line compare, and the five bugs that looked like something else |
+| `starter/demos/SCROLLER.md` | the mode X scroller |
+| `starter/demos/PARALLAX.md` | NEON DRIFT: real per-row parallax off the CRTC line compare, and the five bugs that looked like something else |
 | `CH375.md` | the CH375 USB work: what came out of it and where it went |
 | `README.md` | setup, and the failure modes worth knowing |
 
@@ -324,7 +324,7 @@ display combination code 7 (VGA mono, text mode 7) on one boot and code 8 (VGA
 colour, text mode 3) on the next, with no configuration change. Anything that
 touches the screen must decide at *run time* — probe `INT 10h AH=1Ah` (AL=1Ah
 means the code in BL is valid; 1, 5, 7 and 0Bh are mono) rather than baking in a
-palette. `starter/fractal.pas` does this and takes a `MONO`/`COLOUR` argument to
+palette. `starter/demos/fractal.pas` does this and takes a `MONO`/`COLOUR` argument to
 override the probe, which is how to test the path the card didn't boot into.
 
 Note a colour ramp is *not* automatically safe on mono: the monitor sums R+G+B,
@@ -1381,16 +1381,23 @@ extras/           optional DOS enhancements that SHIP with the kit but that
                   deliberately.  extras/README.md says how to add one
 starter/          FPC cross-compile setup, test harness, worked examples.
                   Reserved for the bridge's own tools -- not for new projects.
-                  scroller.pas + modex.pas + music.pas live here rather than
-                  in projects/ because they ship in the client kit: the
-                  scroller is the demo that shows what the machine can do,
+                  The TOOLS' sources are in starter/ itself; the DEMOS' are
+                  in starter/demos/ (since 2026-09-27) with the units only
+                  they use (modex, music, mystery, opl2, retro, pmdet, kbd).
+                  build.cmd looks in both, everything builds into the one
+                  starter/build/, and the kit ships the demos in client\DEMOS
+                  but INSTALL.BAT still puts them in C:\TOOLS -- upgrade and
+                  verify look there.  hello.pas stays in starter/: it is the
+                  worked example build.cmd and test.cmd default to.
+                  demos/: scroller.pas + modex.pas + music.pas are the
+                  scroller, the demo that shows what the machine can do,
                   and SCROLLER.md is its write-up. parallax.pas + retro.pas +
                   pmdet.pas are NEON DRIFT, the split-screen parallax demo,
-                  with PARALLAX.md as its write-up -- it ships for the same
-                  reason the scroller does. kbd.pas is the INT 9
+                  with PARALLAX.md as its write-up. kbd.pas is the INT 9
                   key-state unit RAYCAST KEYS uses; mkwalk.py generates the
                   timed-event scripts RAYCAST PLAY reads, and walk.txt is one
-                  it made for the default seed. kinj.asm is the resident
+                  it made for the default seed.
+                  starter/ itself: kinj.asm is the resident
                   keystroke injector and screen grabber, mkkeys.py compiles
                   its scripts, session.txt is a worked one. knet.asm is the
                   LIVE remote keyboard -- keys typed on Windows injected into
@@ -1477,8 +1484,15 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 66 is public** (2026-09-26: `NETCHK`, the faster `HD`, the
-  StevenC & Claude credit), at https://github.com/jdredd87/DOSBridge. Build 62 was the
+* **Build 67 is public** (2026-09-27: the optional `extras/` -- ANSISC, the
+  fast 6.22-exact ANSI.SYS, and UMBSC, the UMB manager with no low memory
+  -- in `client\EXTRAS` and `server\extras`), at
+  https://github.com/jdredd87/DOSBridge.  Build 66 (2026-09-26) brought
+  `NETCHK`, the faster `HD` and the StevenC & Claude credit. **A `.SYS` in a
+  release can be a driver, not text:** the dev repo's `*.SYS text` rule
+  corrupted both extras' drivers once before anything was pushed, and
+  `extras/*/bin/*` is binary now -- check a new binary's stored bytes
+  (`git cat-file -p :path`) before pushing. Build 62 was the
   first release carrying `docs/`, the ARP fix and the `dosd` single-instance
   guard. See **Cutting a public release** above for how, and for the two
   things building does not verify.
@@ -1512,7 +1526,7 @@ What is installed and working, as opposed to what is written up:
 
   Three of its findings are general and are in the topic docs rather than
   here: the pixel pan is latched a refresh later than the start address
-  (`docs/graphics.md`, and **`starter/modex.pas` still has it**, so
+  (`docs/graphics.md`, and **`starter/demos/modex.pas` still has it**, so
   `scroller.pas` almost certainly shimmers the same way); a frame that is
   sometimes one refresh and sometimes two is worse than always two
   (`docs/graphics.md`); and PIT channel 0 is in mode 3, so every sub-tick

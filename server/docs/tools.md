@@ -173,7 +173,7 @@ still ~64 KB/s, so a 10 MB check is about three minutes: budget for it.
 ## PIT channel 0 is in MODE 3, so sub-tick timing is ambiguous by half a tick
 
 **Found on 2026-09-21 while chasing a frame-timing problem in
-`starter/parallax.pas`.** `starter/prof.pas` gets its resolution by latching PIT
+`starter/demos/parallax.pas`.** `starter/prof.pas` gets its resolution by latching PIT
 channel 0 and pairing the counter with the BIOS tick, and so did a stopwatch
 written in that project. Both are wrong below about 30ms, and for the same
 reason.
@@ -194,7 +194,7 @@ What that looks like in practice:
   time, which is the same error showing up as apparently overlapping sections.
 
 **It does not affect long measurements.** The coprocessor-versus-integer race
-in `starter/parallax.pas` runs for seconds, where 27.5ms is noise, and its
+in `starter/demos/parallax.pas` runs for seconds, where 27.5ms is noise, and its
 numbers are sound. The rule is: trust channel 0 over intervals much longer than
 half a tick, and not at all over a frame.
 

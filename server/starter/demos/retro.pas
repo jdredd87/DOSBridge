@@ -11,7 +11,7 @@ unit Retro;
   wait, key the next -- would stall the scroll dead.  MusicTick is called
   once per frame and returns immediately; the whole sequencer is a step
   counter and four small pieces of per-voice state.  This is the same rule
-  starter/music.pas is built on and for the same reason.
+  starter/demos/music.pas is built on and for the same reason.
 
   TIMING COMES FROM THE BIOS TICK, NOT THE FRAME COUNT.  Counting frames
   looks natural when the caller already has a frame loop, and it is wrong:

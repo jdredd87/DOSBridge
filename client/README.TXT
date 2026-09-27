@@ -1,4 +1,4 @@
-DOS Bridge  build 67  (2026-09-27)
+DOS Bridge  build 68  (2026-09-27)
 
 dosbridge client kit
 ====================
@@ -14,6 +14,10 @@ that argument only decides where an otherwise unused MTCP.NEW is written.
 That creates C:\AI, C:\AGENT, C:\TOOLS and C:\WORK, installs the agent
 loop and the tools, and writes C:\AUTOEXEC.NEW as a suggestion. It does
 NOT modify AUTOEXEC.BAT or CONFIG.SYS.
+
+This folder holds the bridge's own tools. The demos -- RAYCAST, PARALLAX,
+SCROLLER, FRACTAL and the rest -- are in DEMOS; INSTALL puts them in
+C:\TOOLS beside the tools, as before.
 
 NOT IN THIS KIT - you must supply these yourself:
 
