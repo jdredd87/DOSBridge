@@ -25,7 +25,7 @@ TAB_WANT = [
     (r'c:\dos\dosk{TAB}{CR}', r'c:\dos\doskey.com'),
     (r'dir c:\dr{TAB}{CR}', 'dir c:\\drivers'),
     (r'dir c:\co{TAB}{TAB}{TAB}{TAB}{TAB}{CR}', r'dir c:\config.sys'),
-    (r'dir c:\co{STAB}{CR}', r'dir c:\config.sys'),
+    (r'dir c:\co{STAB}{CR}', r'dir c:\config.tu0'),        # the tuning's backup sorts last
     (r'TYPE C:\DOS\M{TAB}{TAB}{TAB}{CR}', r'TYPE C:\DOS\MEMMAKER.HLP'),
     (r'type c:\dos\{TAB}{TAB}{TAB}{TAB}{TAB}{TAB}{TAB}{TAB}{TAB}{TAB}{CR}', r'type c:\dos\country.sys'),
     (r'type c:\dos\zzz{TAB}{CR}', r'type c:\dos\zzz'),

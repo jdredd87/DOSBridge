@@ -333,11 +333,39 @@ spaced ramp.
 
 `C:\MTCP` exists but is empty; the real tools are under `C:\NETWORK\MTCP`.
 
-**`CONFIG.SYS` as of 2026-09-27** -- written over the bridge, at StevenC's
-explicit instruction, one change at a time with a reboot and a check
-after each. `C:\CONFIG.SC0` is the file before any of it, `C:\CONFIG.SC1`
-the one before `BUFFERS` came down from 40, `C:\CONFIG.SC2` the one before
-ANSISC replaced `ANSI.SYS`:
+**`CONFIG.SYS` and `AUTOEXEC.BAT` since the tuning of 2026-09-27 evening**
+-- measured one boot configuration at a time, `projects/dostune` has the
+numbers and the tools (`tune.py apply VARIANT` writes, reads back and
+reboots safely).  Program loads 23% faster, console 55-68% faster, opens
+22% faster, for 10 KB of conventional memory (576,080 free).  The files
+before it are `C:\CONFIG.TU0` and `C:\AUTOEXEC.TU0`:
+
+```
+DOS=UMB                                          CONFIG.SYS
+FILES=30
+BUFFERS=30
+device=c:\drivers\umbsc.sys C800-D000 D800-E000
+devicehigh=c:\drivers\pmemmsc.sys /n
+device=c:\drivers\ansisc.sys
+
+LH C:\DOS\DOSKEYSC.COM                           AUTOEXEC.BAT (the rest
+LH C:\DOS\FASTOPEN.EXE C:=50                      as before)
+LH C:\drivers\pm2000.com 0x60
+```
+
+**A disk cache does not help this machine** -- `projects/cachesc` built one
+(CACHESC, correct, verified on the V30) and measured it: DOS's BUFFERS
+already hold what comes round, and everything outside 640 KB is the
+PicoMEM's and nearly as slow per byte as the disk.  Do not build another
+without reading that README.
+
+**The same file earlier on 2026-09-27** -- written over the bridge, at
+StevenC's explicit instruction, one change at a time with a reboot and a
+check after each. `C:\CONFIG.SC0` is the file before any of it,
+`C:\CONFIG.SC1` the one before `BUFFERS` came down from 40, `C:\CONFIG.SC2`
+the one before ANSISC replaced `ANSI.SYS` (later that day the REM lines
+were dropped and ANSISC moved high at the keyboard; the tuning put it back
+low):
 
 ```
 DOS=UMB
@@ -1485,7 +1513,8 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 69 is public** (2026-09-27: `extras/doskeysc`, DOSKEYSC -- 6.22's
+* **Build 70 is public** (2026-09-27: DOSKEYSC, a directory completes with no
+  trailing `\`, which CD refuses). **Build 69** (2026-09-27: `extras/doskeysc`, DOSKEYSC -- 6.22's
   DOSKEY key for key plus TAB filename completion, in `client\EXTRAS`).
   **Build 68** (2026-09-27: the kit's demos in `client\DEMOS`, their
   sources in `starter/demos`). **Build 67** (2026-09-27) added the optional `extras/` -- ANSISC, the

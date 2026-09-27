@@ -40,8 +40,11 @@ Microsoft has open-sourced.
   drive in front of the name is kept exactly as typed.
 * **Order** is plain byte order of `NAME.EXT`, which is what `DIR /ON`
   shows for 8.3 names.  Each TAB takes the least name after the last one
-  (SHIFT+TAB the greatest before it) and wraps; there is no list kept in
-  memory, so it costs a directory scan per press and not a byte of buffer.
+  (SHIFT+TAB the greatest before it) and wraps.  One directory scan finds
+  the next eight in order and keeps them (112 bytes), so seven presses in
+  eight cost no disk access; it scans again when they run out, when the
+  direction changes, or for a new word.  `test\tabdiff.py` holds this to
+  exactly the answers of scanning on every press.
 * **Case** follows the nearest letter before the cursor: typing in lower
   case gets `autoexec.bat`.
 * **Directories get no `\` after them**, because `CD` will not take one:
@@ -106,8 +109,8 @@ What it costs there:
 
 | | |
 |---|---|
-| memory (`MEM /C`, 512-byte buffer) | 4,144 bytes for 6.22's DOSKEY, **4,928** for DOSKEYSC -- the TAB code and its state are most of the difference |
-| a TAB in `C:\DOS` (132 files) | about 0.24 s on the V30 -- a directory scan per press |
+| memory (`MEM /C`, 512-byte buffer) | 4,144 bytes for 6.22's DOSKEY, **5,232** for DOSKEYSC -- the TAB code and its state are most of the difference |
+| 20 TABs in `C:\DOS` (132 files) | about 1.0 s on the V30, 0.05 s a press (a scan every press, as first released: 4.8 s) |
 | a TAB in `C:\` (32 names) | about 0.04 s |
 
 ## Where it deliberately differs from 6.22's

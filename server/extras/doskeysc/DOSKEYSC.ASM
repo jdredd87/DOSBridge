@@ -77,6 +77,11 @@ tc_last times 13 db 0           ; the name it last put in
 tc_best times 14 db 0           ; while searching: best so far + attribute
 tc_wrap times 14 db 0           ;                  wrap-around choice
 tc_back db      0               ; 1 = SHIFT+TAB
+tc_list times 8*14 db 0         ; the next eight names after tc_last, in order
+tc_lcnt db      0               ; how many
+tc_lpos db      0               ; the next to hand out
+tc_lok  db      0               ; the list is good for this word and direction
+tc_ldir db      0               ; ...which direction
 tc_pos  dw      0               ; where the name goes in the line
 tc_nl   dw      0               ; its length
 tc_tail dw      0               ; what follows the cursor
@@ -1486,9 +1491,30 @@ k_tab:  cmp     byte [tc_on], 0
 .pz:    mov     byte [di], 0
         mov     byte [tc_last], 0
         mov     byte [tc_on], 1
+        mov     byte [tc_lok], 0        ; nothing remembered for this word
 .search:
-        call    tfind
+        ; the names after the last one are remembered from the last scan,
+        ; eight at a time: hand out the next without going to the disk
+        cmp     byte [tc_lok], 0
+        je      .scan
+        mov     al, [tc_back]
+        cmp     al, [tc_ldir]
+        jne     .scan
+        mov     al, [tc_lpos]
+        cmp     al, [tc_lcnt]
+        jae     .scan
+        inc     byte [tc_lpos]
+        mov     ah, 14
+        mul     ah
+        add     ax, tc_list
+        mov     si, ax
+        mov     di, tc_best
+        mov     cx, 14
+        rep     movsb
+        jmp     .found
+.scan:  call    tfind
         jc      .nope
+.found:
         mov     si, tc_best
         mov     di, tc_last
         mov     cx, 13
@@ -1654,6 +1680,7 @@ tfind:  push    es
         xor     ax, ax
         mov     [tc_best], al
         mov     [tc_wrap], al
+        mov     [tc_lcnt], al
         mov     dx, TC_PAT
         mov     cx, 10h
         mov     ah, 4Eh
@@ -1666,10 +1693,9 @@ tfind:  push    es
         ; next; otherwise for the wrap round.  Either way the first in order.
         mov     di, tc_last
         call    tcmp
-        mov     di, tc_best
-        ja      .cand
-        mov     di, tc_wrap
-.cand:  cmp     byte [di], 0
+        ja      .after
+        mov     di, tc_wrap             ; not after it: the wrap-round choice
+        cmp     byte [di], 0
         je      .take
         call    tcmp
         jae     .nx
@@ -1677,12 +1703,20 @@ tfind:  push    es
         rep     movsb
         mov     al, [TC_DTA+15h]
         mov     [di], al
+        jmp     .nx
+.after: call    tlist                   ; after it: into the list, in order
 .nx:    mov     ah, 4Fh
         jmp     .f
-.end:   cmp     byte [tc_best], 0
-        jne     .got
+.end:   mov     byte [tc_lok], 0
         mov     si, tc_wrap
-        mov     di, tc_best
+        cmp     byte [tc_lcnt], 0
+        je      .usew
+        mov     byte [tc_lok], 1        ; the list is good for the next TABs
+        mov     al, [tc_back]
+        mov     [tc_ldir], al
+        mov     byte [tc_lpos], 1
+        mov     si, tc_list
+.usew:  mov     di, tc_best
         mov     cx, 14
         rep     movsb
 .got:   call    tswap
@@ -1712,6 +1746,59 @@ tswap:  push    es
         loop    .l
         pop     es
         ret
+
+; put the name at SI (the DTA's) into tc_list, which holds the first eight
+; names after tc_last in the order of travel
+tlist:  mov     di, tc_list
+        xor     cx, cx
+        mov     cl, [tc_lcnt]
+        xor     bx, bx                  ; BX = where it goes
+.fp:    cmp     bx, cx
+        jae     .at
+        call    tcmp
+        jb      .at
+        add     di, 14
+        inc     bx
+        jmp     .fp
+.at:    cmp     bx, 8
+        jae     .r                      ; after all eight: not needed yet
+        cmp     cx, 8
+        jb      .room
+        dec     cx                      ; full: the last one falls off
+.room:  push    si                      ; entries BX..CX-1 move down one
+        mov     ax, cx                  ; (CX = how many there are)
+        sub     ax, bx
+        mov     ah, 14
+        mul     ah                      ; AX = bytes to move
+        push    ax
+        mov     al, cl
+        mov     ah, 14
+        mul     ah
+        add     ax, tc_list - 1         ; the last byte in use
+        mov     si, ax
+        lea     di, [si+14]
+        pop     ax
+        push    cx
+        mov     cx, ax
+        std
+        rep     movsb
+        cld
+        pop     cx
+        inc     cx
+        mov     [tc_lcnt], cl
+        pop     si
+        mov     ax, bx                  ; and the new one into its place
+        mov     ah, 14
+        mul     ah
+        add     ax, tc_list
+        mov     di, ax
+        push    si
+        mov     cx, 13
+        rep     movsb
+        mov     al, [TC_DTA+15h]
+        mov     [di], al
+        pop     si
+.r:     ret
 
 ; compare the names at SI and DI in the direction of travel: flags as for
 ; SI - DI going forward, DI - SI for SHIFT+TAB.  Empty is least.
