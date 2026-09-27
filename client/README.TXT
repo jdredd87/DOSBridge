@@ -1,4 +1,4 @@
-DOS Bridge  build 68  (2026-09-27)
+DOS Bridge  build 69  (2026-09-27)
 
 dosbridge client kit
 ====================
@@ -52,4 +52,5 @@ INSTALL does not copy them anywhere and never edits CONFIG.SYS. Each
 folder has a .TXT -- read it before using what is in it.
 
   EXTRAS\ANSISC     read ANSISC.TXT
+  EXTRAS\DOSKEYSC   read DOSKEYSC.TXT
   EXTRAS\UMBSC      read UMBSC.TXT

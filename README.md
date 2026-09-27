@@ -1,4 +1,4 @@
-# DOS Bridge — build 68
+# DOS Bridge — build 69
 
 _Built 2026-09-27 from `C:\dosbridgeDEV`._
 

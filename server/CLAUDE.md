@@ -1374,7 +1374,8 @@ projects/         YOUR work: one folder per project, made by `dosnew NAME`.
 extras/           optional DOS enhancements that SHIP with the kit but that
                   nothing installs (INSTALL.BAT never edits CONFIG.SYS):
                   ansisc/ is the fast ANSI.SYS, umbsc/ the UMB manager
-                  that uses no low memory.  Each extra has its source,
+                  that uses no low memory, doskeysc/ a DOSKEY with TAB
+                  filename completion.  Each extra has its source,
                   a released bin/ and a DOS-readable .TXT; the server half
                   carries the folder, the client half gets EXTRAS\NAME\ with
                   bin/ + .TXT.  Nothing is rebuilt at kit time -- update bin/
@@ -1484,7 +1485,8 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 67 is public** (2026-09-27: the optional `extras/` -- ANSISC, the
+* **Build 68 is public** (2026-09-27: the kit's demos in `client\DEMOS`, their
+  sources in `starter/demos`). **Build 67** (2026-09-27) added the optional `extras/` -- ANSISC, the
   fast 6.22-exact ANSI.SYS, and UMBSC, the UMB manager with no low memory
   -- in `client\EXTRAS` and `server\extras`), at
   https://github.com/jdredd87/DOSBridge.  Build 66 (2026-09-26) brought

@@ -1,0 +1,76 @@
+DOSKEYSC -- DOSKEY, with TAB completion   a DOS Bridge extra (optional)
+StevenC & Claude, 2026.  Public domain.
+
+WHAT IT IS
+  A DOSKEY for MS-DOS 5 and later. Everything MS-DOS 6.22's DOSKEY does,
+  key for key and with the same result on the screen -- plus TAB:
+
+    TAB          completes the file or directory name being typed
+    TAB again    the next name that matches, in name order
+    SHIFT+TAB    the one before
+
+  Type part of a name -- TYPE AU, CD \DO, COPY C:\DOS\ME -- and press TAB.
+  A directory gets a "\" after it; press END (or any key) and TAB again
+  to go on inside it. The name comes in lower case if you are typing in
+  lower case. Pressing TAB inside a word completes from the part before
+  the cursor and replaces the whole word. Hidden and system files are
+  not offered; no match leaves the line as it was. A drive with no disk
+  in it just finds nothing -- there is no "Abort, Retry, Fail?".
+
+  It is written from a study of MS-DOS 6.22's DOSKEY and contains none of
+  its code. Measured in an emulator against 6.22's DOSKEY on thousands of
+  keystroke sessions, and on a real NEC V30, it gives the same line, the
+  same screen and the same cursor after every key.
+
+INSTALLING
+  Nothing installs it for you. Copy it:
+
+    COPY DOSKEYSC.COM C:\DOS
+
+  and in AUTOEXEC.BAT put it where DOSKEY was, keeping the old line:
+
+    REM LH DOSKEY
+    LH C:\DOS\DOSKEYSC
+
+  (LH loads it into upper memory if you have some. It takes about 5 KB
+  with the usual 512-byte buffer; 6.22's DOSKEY takes about 4 KB.)
+
+  To try it without a reboot, type DOSKEYSC /REINSTALL -- it goes in over
+  the DOSKEY already loaded, which stays in memory unused until you
+  restart. Plain DOSKEYSC with 6.22's DOSKEY loaded does nothing but say
+  so, just as DOSKEY does not load twice.
+
+  If you would rather type DOSKEY, name it DOSKEY.COM and put it ahead of
+  C:\DOS on the PATH (or replace C:\DOS\DOSKEY.COM, keeping the original).
+
+COMMAND LINE -- the same as 6.22's DOSKEY, and two more
+  /REINSTALL       install a new copy even if one is loaded
+  /BUFSIZE=size    history and macro buffer, bytes (default 512)
+  /MACROS  /M      list the macros
+  /HISTORY /H      list the commands remembered
+  /INSERT          new text is inserted (INS switches for one line)
+  /OVERSTRIKE      new text types over the old (the default)
+  /TAB             TAB completes names (the default)
+  /NOTAB           TAB is an ordinary character again, as in 6.22
+  name=text        define a macro; name= deletes it
+  /?               help
+
+  Macros: $T between commands, $1-$9 the words after the macro's name,
+  $* all of them, $G $L $B for > < |, $$ for $.
+
+KEYS -- all of 6.22's
+  LEFT RIGHT HOME END, CTRL+LEFT CTRL+RIGHT (a word), INS, DEL, BACKSPACE,
+  CTRL+HOME CTRL+END (delete to the start / end), ESC (clear),
+  UP DOWN PGUP PGDN (history), F7 (list it), ALT+F7 (clear it),
+  F8 (search it for what is before the cursor), F9 (a line by number),
+  ALT+F10 (clear the macros), and the DOS template keys F1 F2 F3 F4 F5 F6.
+
+WORKS WITH 6.22'S DOSKEY
+  Its resident part keeps 6.22's layout for the history, the macros and
+  the insert setting, so either program's /M, /H, /INSERT and macro
+  definitions work on the other's resident copy.
+
+SOURCE
+  In the DOS Bridge repository, extras\doskeysc: DOSKEYSC.ASM (NASM), and
+  the tests -- an emulator that runs it beside 6.22's DOSKEY and compares
+  every key, and DKTEST, which does the same on a real machine.

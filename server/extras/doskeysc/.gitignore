@@ -1,0 +1,7 @@
+build/
+test/__pycache__/
+test/*.KEY
+# Microsoft's MS-DOS 6.22 DOSKEY.COM and COMMAND.COM, the test reference:
+# proprietary, never committed.  Copy your own into ref\ to run the tests.
+ref/
+*.lst
