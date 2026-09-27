@@ -325,6 +325,25 @@ names. On the 386 it recovered `C000:729B`, the card's video BIOS.
   transport last, or check the binaries carry it first: `coprocessor, and the
   stub` appears in every fixed EXE.
 
+## Code in upper memory runs about 2.4 times slower
+
+**Measured 2026-09-27.**  On the V30 the upper memory blocks (C800h and
+D800h) are RAM on the PicoMEM card, reached over the 8-bit ISA bus.  Data
+there reads at ~89% of the PC's own RAM (`PMBENCH`), but **code** fetched
+from it is far slower: the same console driver, the same test, loaded into
+each by `extras/ansisc/bin/ANSITEST.EXE`:
+
+| characters per second, INT 29h | conventional | upper memory |
+|---|---|---|
+| MS-DOS 6.22 `ANSI.SYS` | 1,826 | 1,359 |
+| ANSISC | 9,743 | 4,059 |
+
+So `DEVICEHIGH`/`LH` trades speed for conventional memory on this machine,
+and a driver whose code runs constantly -- the console, the packet driver
+(`PM2000`), the EMS driver -- pays it on every call.  `ANSISC` is loaded low
+for that reason.  Whether `PM2000` and `PMEMMSC` would gain from the same was
+not measured.
+
 ## The CMOS battery is dead, and it breaks power-cycle recovery
 
 **Found 2026-09-03.** The box's clock reads `01-01-80 12:08a` a few minutes

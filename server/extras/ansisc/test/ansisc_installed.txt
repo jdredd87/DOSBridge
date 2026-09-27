@@ -1,0 +1,7 @@
+  1 CON handle, 80-char lines, scrolling      3831
+  3 CON handle, 20 lines, no scrolling       5519
+  4 DOS function 02h, char at a time          970
+  5 INT 29h, char at a time                  4812
+  6 escape sequences: position + colour      4653
+  7 video BIOS teletype, INT 10h 0Eh         2588
+  8 straight into video memory             116480

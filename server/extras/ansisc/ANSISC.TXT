@@ -1,0 +1,66 @@
+ANSISC -- ANSI.SYS, fast                  a DOS Bridge extra (optional)
+StevenC & Claude, 2026
+
+WHAT IT IS
+  A drop-in replacement for MS-DOS's ANSI.SYS console driver. It does
+  everything MS-DOS 6.22's ANSI.SYS does -- the escape sequences, key
+  reassignment, MODE CON (25/43/50 rows), the switches -- with the same
+  result on the screen, and draws text 3 to 4 times faster through DOS
+  on an NEC V30 (TYPE, DIR, anything written to the console).
+
+  It is built from Microsoft's MS-DOS 4.0 source of ANSI.SYS, which
+  Microsoft published under the MIT licence, with MS-DOS 6.22's changes
+  re-implemented. It is not Microsoft's 6.22 driver and contains none of
+  its code. Needs DOS 4.00 or later.
+
+NOTHING INSTALLS IT FOR YOU
+  INSTALL.BAT does not touch CONFIG.SYS. To use ANSISC, copy it and edit
+  CONFIG.SYS yourself -- and have a boot disk handy, as with any driver:
+
+    COPY ANSISC.SYS C:\DOS
+
+  then in C:\CONFIG.SYS replace the ANSI.SYS line with ONE of:
+
+    DEVICE=C:\DOS\ANSISC.SYS          fastest: conventional memory
+    DEVICEHIGH=C:\DOS\ANSISC.SYS      saves about 5 KB, slower
+
+  Keep the old line as a REM so you can go back:
+
+    REM DEVICEHIGH=C:\DOS\ANSI.SYS
+
+  Where it loads matters. On a machine whose upper memory is on an ISA
+  card (a PicoMEM, for one), code runs from there more than twice as
+  slowly as from the PC's own memory.
+
+SWITCHES -- the same as MS-DOS 6.22's ANSI.SYS
+  /X             extended keys reassigned separately (101-key keyboards)
+  /K             treat a 101-key keyboard as 84-key
+  /R             scroll through the BIOS, for screen-reading programs
+                 (also turns the fast paths off, so a reader sees all)
+  /S /SCREENSIZE set the BIOS row count to 25 at load
+  /L             accepted; MS-DOS 6.22 ignores it too
+
+WHY IT IS FASTER
+  MS-DOS's ANSI.SYS makes two video BIOS calls for every character.
+  ANSISC writes text-mode characters straight into video memory and
+  moves the cursor itself, the same way the BIOS does. On a real CGA,
+  whose memory "snows" when written directly, it keeps the BIOS path.
+
+MEASURING IT
+  ANSIBNCH       the installed console's speed, through DOS
+  ANSITEST a.sys b.sys [-H]
+                 loads each driver into its own memory, runs it on the
+                 screen, prints a CRC of the result and its speed; -H
+                 loads into upper memory. Nothing is installed or left
+                 behind. Two drivers that behave alike print the same CRC.
+
+  Measured on a V30 (characters per second, 6.22's ANSI.SYS loaded high
+  against ANSISC loaded low):
+    TYPE/DIR-style output, scrolling      1,213 -> 3,831
+    output without scrolling              1,296 -> 5,519
+    escape sequences                      1,811 -> 4,653
+
+SOURCE
+  In the DOS Bridge repository, extras\ansisc: the source, Microsoft's
+  4.0 original it is built from, the build scripts, and the emulator
+  test that compares it with MS-DOS 6.22's ANSI.SYS.

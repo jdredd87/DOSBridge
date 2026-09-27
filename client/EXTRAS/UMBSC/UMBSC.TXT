@@ -1,0 +1,52 @@
+UMBSC -- upper memory, no low memory      a DOS Bridge extra (optional)
+StevenC & Claude, 2026.  Public domain.
+
+WHAT IT IS
+  An upper memory block (UMB) manager for PCs with no 386 memory manager
+  -- an 8088, 8086, V20, V30 or 286 with RAM in the upper memory area,
+  from an EMS board, a RAM card or a PicoMEM. It lets DOS 5 and later
+  load drivers and TSRs "high" (DEVICEHIGH, LOADHIGH) into that RAM.
+
+  It is USE!UMBS.SYS (Marco van Zwetselaar, 1991; Krister Nordvall's
+  2.2) rebuilt so that it takes NO conventional memory at all: USE!UMBS
+  keeps 224 bytes of it for the whole session, for code that DOS calls a
+  dozen times at boot. UMBSC keeps 128 bytes of upper memory instead and
+  has DOS discard the driver itself. Otherwise it answers exactly as
+  USE!UMBS 2.2 does, hands DOS the same blocks in the same order, and
+  takes the same command line.
+
+NOTHING INSTALLS IT FOR YOU
+  A wrong upper memory range can stop a PC booting: have a boot disk
+  handy, and know which ranges are free RAM on YOUR machine -- not the
+  video BIOS (C000-C7FF on most), not an adapter's ROM or RAM, not the
+  EMS page frame. Then:
+
+    COPY UMBSC.SYS C:\DOS
+
+  and at the top of C:\CONFIG.SYS, with your own ranges:
+
+    DOS=UMB
+    DEVICE=C:\DOS\UMBSC.SYS C800-D000 D800-E000
+
+  If USE!UMBS.SYS is already there, REM its line and give UMBSC the same
+  ranges. "MEM /C" afterwards shows no UMB manager in conventional memory
+  and 224 more bytes free.
+
+COMMAND LINE
+  Ranges as XXXX-YYYY, hexadecimal paragraphs, start inclusive, end
+  exclusive; up to 16. A bad line installs nothing and says so.
+  If an XMS driver without UMB support is already loaded, UMBSC adds
+  the UMBs and passes every other XMS call on to it. If UMBs are already
+  managed, it does not install.
+
+HOW IT KEEPS NO LOW MEMORY
+  It copies its resident part -- the XMS entry point, the INT 2Fh hook
+  and the block list, 125 bytes -- to the end of the last range, gives
+  DOS the rest, and returns from its INIT as a block device with no
+  units, which MS-DOS discards (MS-DOS's own source: SYSCONF.ASM,
+  Erase_Dev_do). No message is printed.
+
+SOURCE
+  In the DOS Bridge repository, extras\umbsc: UMBSC.ASM (NASM), and the
+  emulator test that boots it beside USE!UMBS.SYS and compares what DOS
+  would be given.

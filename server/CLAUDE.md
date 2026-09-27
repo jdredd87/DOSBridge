@@ -332,6 +332,51 @@ so two different colours can land on the same grey. Mono needs its own evenly
 spaced ramp.
 
 `C:\MTCP` exists but is empty; the real tools are under `C:\NETWORK\MTCP`.
+
+**`CONFIG.SYS` as of 2026-09-27** -- written over the bridge, at StevenC's
+explicit instruction, one change at a time with a reboot and a check
+after each. `C:\CONFIG.SC0` is the file before any of it, `C:\CONFIG.SC1`
+the one before `BUFFERS` came down from 40, `C:\CONFIG.SC2` the one before
+ANSISC replaced `ANSI.SYS`:
+
+```
+DOS=UMB
+FILES=30
+BUFFERS=20
+REM Device=c:\drivers\USE!UMBS.SYS C800-D000 D800-E000
+Device=c:\drivers\umbsc.sys C800-D000 D800-E000
+REM Devicehigh=c:\drivers\pmemm.exe /n
+Devicehigh=c:\drivers\pmemmsc.sys /n
+REM devicehigh=c:\dos\ansi.sys
+device=c:\drivers\ansisc.sys
+```
+
+`ANSISC` (2026-09-27, `extras/ansisc` -- an optional extra that ships in the kit) is ANSI.SYS rebuilt from
+Microsoft's MIT-licensed MS-DOS 4.0 source, with MS-DOS 6.22's changes
+re-implemented and new fast paths: 3-4x faster console output through DOS
+on the V30, and the same screen as 6.22's driver across ~7,300 emulator
+comparisons and on the real machine.  It is loaded LOW on purpose -- code
+in the PicoMEM's upper memory runs ~2.4x slower (`docs/hardware.md`).  Its
+README has everything.  **`extras/ansisc/ANSI622.SYS` is Microsoft's
+proprietary 6.22 binary, the test reference: it is in `.gitignore` and must
+never be committed.**
+
+`UMBSC` and `PMEMMSC` are StevenC's and Claude's UMB manager and EMS
+driver -- no conventional memory for the UMB manager (224 bytes back), EMS
+page mapping 45-57% faster, and five EMS bugs fixed.  `UMBSC` lives HERE,
+`extras/umbsc` (an optional extra, since 2026-09-27; it is not
+PicoMEM-specific); `PMEMMSC` is PicoMEM-only and stays in
+`C:\CH375USB\PicoMEM\emm`.  Their READMEs have the measurements. `BUFFERS=20` (from 40) gave
+back another 10,640 bytes -- 532 a buffer; nothing in the bridge needs
+more, and `FILES=30` is the setting jobs depend on. With both, free
+conventional memory went from 575,472 to **586,336**. **Build a CONFIG.SYS in a
+Python file, never with `printf` or an inline script:** the first attempt
+turned `c:\dos\ansi.sys` into `c:\dos<BEL>nsi.sys` (`\a`), and it was
+caught only because the file was read back before the reboot. Read it
+back byte for byte, every time, before rebooting.
+
+The version below is the file before any of that, as found on 2026-09-10.
+
 **`CONFIG.SYS`, read off the box 2026-09-10** -- and it is nothing like what
 this file used to claim, which was "one active line,
 `device=c:\bp\bin\ch375R9.sys`":
@@ -628,8 +673,16 @@ Two things that are NOT verified by building:
   from the built kit without touching anything.
 
 Finally, `C:\DOSBridgeInstaller` (no `DEV`) is an older checkout of the same
-public repo, left at build 60. One checkout is enough; if it is still there,
-it is stale by definition.
+public repo. One checkout is enough; if it is still there, it is stale by
+definition.
+
+**Check that `C:\dosbridgeDEVInstaller` still has its `.git` before
+building.** On 2026-09-26 it had none -- it held a plain build 63 -- and
+build 65 had been pushed from `C:\DOSBridgeInstaller` instead. The
+folder was set aside as `C:\dosbridgeDEVInstaller.build63-nogit`, the
+public repo cloned back into it, and build 66 released from there. A
+`makeinst` into a folder with no `.git` succeeds and leaves nothing to
+commit, so it fails silently at the push step.
 
 ### Compilers are not fixed
 
@@ -1318,6 +1371,14 @@ files/            dosd's serving root for /f/ fetches; holds staged programs and
                   the EXIT0.COM dosd writes on first run
 projects/         YOUR work: one folder per project, made by `dosnew NAME`.
                   Staged under its own namespace so filenames cannot collide
+extras/           optional DOS enhancements that SHIP with the kit but that
+                  nothing installs (INSTALL.BAT never edits CONFIG.SYS):
+                  ansisc/ is the fast ANSI.SYS, umbsc/ the UMB manager
+                  that uses no low memory.  Each extra has its source,
+                  a released bin/ and a DOS-readable .TXT; the server half
+                  carries the folder, the client half gets EXTRAS\NAME\ with
+                  bin/ + .TXT.  Nothing is rebuilt at kit time -- update bin/
+                  deliberately.  extras/README.md says how to add one
 starter/          FPC cross-compile setup, test harness, worked examples.
                   Reserved for the bridge's own tools -- not for new projects.
                   scroller.pas + modex.pas + music.pas live here rather than
@@ -1416,7 +1477,8 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 62 is public**, at https://github.com/jdredd87/DOSBridge -- the
+* **Build 66 is public** (2026-09-26: `NETCHK`, the faster `HD`, the
+  StevenC & Claude credit), at https://github.com/jdredd87/DOSBridge. Build 62 was the
   first release carrying `docs/`, the ARP fix and the `dosd` single-instance
   guard. See **Cutting a public release** above for how, and for the two
   things building does not verify.

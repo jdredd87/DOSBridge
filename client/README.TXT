@@ -1,4 +1,4 @@
-DOS Bridge  build 66  (2026-09-26)
+DOS Bridge  build 67  (2026-09-27)
 
 dosbridge client kit
 ====================
@@ -40,3 +40,12 @@ DHCP -- so it costs somebody a walk to the keyboard.
 After INSTALL, reboot. The Windows side should log a poll within seconds:
 
     dosctl status      ->  DOS box: alive, polled 0.4s ago
+
+OPTIONAL EXTRAS -- the EXTRAS folder in this kit
+
+DOS enhancements that ship with the bridge but that NOTHING installs:
+INSTALL does not copy them anywhere and never edits CONFIG.SYS. Each
+folder has a .TXT -- read it before using what is in it.
+
+  EXTRAS\ANSISC     read ANSISC.TXT
+  EXTRAS\UMBSC      read UMBSC.TXT

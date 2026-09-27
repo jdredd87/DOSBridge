@@ -1,0 +1,5 @@
+build/
+ANSI622.SYS
+*.SYS.bak
+test/__pycache__/
+test/full*.txt

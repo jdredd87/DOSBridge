@@ -1,6 +1,6 @@
-# DOS Bridge — build 66
+# DOS Bridge — build 67
 
-_Built 2026-09-26 from `C:\dosbridgeDEV`._
+_Built 2026-09-27 from `C:\dosbridgeDEV`._
 
 Run and test DOS software on a real 8086-class DOS machine from your Windows
 command line, over whatever network card that machine has. Claude Code drives
