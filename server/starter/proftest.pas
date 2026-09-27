@@ -1,5 +1,5 @@
 program ProfTest;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Exercise the Prof unit on work whose relative cost is already known.
 
   BENCH measured 16-bit multiply at 58640/sec and 32-bit at 11484/sec on this

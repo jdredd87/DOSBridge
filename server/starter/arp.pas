@@ -1,5 +1,5 @@
 program Arp;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Ask "who has this IP?" on the wire, and listen for the answer.
 
   Usage:  ARP 192.168.1.1          resolve one address

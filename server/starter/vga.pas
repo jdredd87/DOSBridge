@@ -1,5 +1,5 @@
 unit VGA;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Shared mode 13h plumbing for the graphics demos.
 
   This exists because fractal.pas and balls.pas had grown ~60 lines of

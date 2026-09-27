@@ -1,5 +1,5 @@
 program Ivt;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Interrupt vector table dump, with each hooked vector attributed to its owner.
 
   Usage:  IVT              well-known vectors plus everything hooked in RAM

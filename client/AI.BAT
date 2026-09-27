@@ -134,6 +134,12 @@ REM  A flag left by the outage that was in progress when the box went
 REM  down would silence the first [offline] notice after a reboot.
 IF EXIST C:\AGENT\OFFLINE.FLG DEL C:\AGENT\OFFLINE.FLG
 IF EXIST C:\AGENT\OFFSAID.FLG DEL C:\AGENT\OFFSAID.FLG
+REM  NETCHK's count of failed polls is per BOOT, and clearing it here is
+REM  the half of its loop guard that stops a reboot following straight on
+REM  from a reboot: every boot has to fail a full round of polls again
+REM  before it may decide anything. NETBOOT.DAT, the count of reboots, is
+REM  deliberately NOT cleared here -- only a poll that works clears it.
+IF EXIST C:\AGENT\NETFAIL.DAT DEL C:\AGENT\NETFAIL.DAT
 
 :LOOP
 IF EXIST C:\AGENT\STOP.FLG GOTO QUIT
@@ -192,6 +198,11 @@ REM
 REM  If this ever needs putting back, it was one line:
 REM    IF NOT EXIST C:\AGENT\JOB.BAT HTGET -quiet -o C:\AGENT\JOB.BAT http://%SRV%/job > NUL
 IF NOT EXIST C:\AGENT\JOB.BAT GOTO OFFLINE
+REM  A poll worked, so any outage NETCHK was counting is over. /OK logs
+REM  the recovery if it had rebooted for it and clears both counters.
+REM  Only NETCHK ever creates NETBOOT.DAT, so it is certainly there to run.
+IF EXIST C:\AGENT\NETFAIL.DAT DEL C:\AGENT\NETFAIL.DAT
+IF EXIST C:\AGENT\NETBOOT.DAT C:\TOOLS\NETCHK.EXE /OK
 REM  Coming back after an outage is worth exactly one line. Without
 REM  it the screen goes from an [offline] notice straight into job
 REM  traffic, and there is no way to tell a server that recovered
@@ -240,6 +251,30 @@ IF EXIST C:\AGENT\OFFSAID.FLG GOTO OFFWAIT
 ECHO  [offline] no reply from %UPHOST% - retrying, Q quits
 ECHO . > C:\AGENT\OFFSAID.FLG
 :OFFWAIT
+REM  Is it us, or them? A failed poll has three causes and only one of
+REM  them is cured by rebooting THIS box. Once per 30 failures (about four
+REM  minutes) NETCHK ARPs the server, then the router:
+REM    server answers        dosd is down; our link is fine    keep polling
+REM    only router answers   the server's host is gone         keep polling
+REM    neither answers       our own link is dead              errorlevel 3
+REM  The 386SX lost its WiFi on 2026-09-22 and sat here for half an hour,
+REM  healthy and deaf, until a power cycle brought it straight back.
+REM
+REM  It will reboot at most three times for one outage, then only poll.
+REM  The counters and the reasons are in C:\AGENT\NETCHK.LOG, and
+REM  NETCHK /STATUS prints them. Silent except when it decides something.
+IF NOT EXIST C:\TOOLS\NETCHK.EXE GOTO OFFCHOICE
+C:\TOOLS\NETCHK.EXE %UPHOST%
+IF ERRORLEVEL 3 GOTO NETBOOT
+GOTO OFFCHOICE
+:NETBOOT
+REM  COLD, meaning a full POST, because that is the most a program can do
+REM  towards what a power cut did. Whether it is enough to bring the
+REM  PicoMEM's WiFi back is not yet known: NETCHK.LOG will say, because a
+REM  reboot that worked is followed by a RECOVERED line.
+IF EXIST C:\AI\COLDBOOT.COM C:\AI\COLDBOOT.COM
+IF EXIST C:\AI\REBOOT.COM C:\AI\REBOOT.COM
+:OFFCHOICE
 REM  /N hides CHOICE's own "[Q,Y]?" prompt, which was the ugliest thing on
 REM  the screen. The line above already says what the keys are.
 REM

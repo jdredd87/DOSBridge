@@ -1,5 +1,5 @@
 program MatrixRain;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Matrix-style digital rain in 80x25 colour text mode.
 
   Usage:  matrix [seconds]        default 30, any key quits early

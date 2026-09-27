@@ -60,7 +60,7 @@ pulls in with `uses`; everything else builds to an `.EXE` of the same name.
 
 | | |
 |---|---|
-| `about.pas` | the `DOS Bridge -- StevenC` banner; `uses About` is all it takes |
+| `about.pas` | the `DOS Bridge -- StevenC & Claude` banner; `uses About` is all it takes |
 | `tester.pas` | test harness: `Check`, `Note`, `Finish`, `Failures` |
 | `cpu.pas` | run-time CPU and coprocessor identification: `Has186`, `HasFpu` |
 | `vga.pas` | mode 13h plumbing: `SetMode`, `FillSpan`, palette, retrace |

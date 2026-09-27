@@ -1,5 +1,5 @@
 program PktDrv;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Find and describe the packet driver -- the layer everything else on this
   machine's network sits on top of.
 

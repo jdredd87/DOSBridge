@@ -1,5 +1,5 @@
 program Mozart;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { The opening of Mozart's Eine kleine Nachtmusik (K. 525, first movement)
   played on the PC speaker.
 

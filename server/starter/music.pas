@@ -1,5 +1,5 @@
 unit Music;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { The scroller's soundtrack: a three-voice space theme on the AdLib / OPL2.
 
   The one constraint that shapes all of this is that IT MUST NOT BLOCK.  The

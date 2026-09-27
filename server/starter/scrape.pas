@@ -1,5 +1,5 @@
 program Scrape;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Capture the text screen and print it through DOS.
 
   Usage:  SCRAPE            dump the screen as text

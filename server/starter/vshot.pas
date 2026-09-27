@@ -1,5 +1,5 @@
 program VShot;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Capture a mode 13h graphics screen and print it as ASCII art.
 
   Usage:  VSHOT             capture, then restore text mode

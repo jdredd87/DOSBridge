@@ -1,5 +1,5 @@
 program Hello;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Smoke test: proves the compile -> push -> run -> capture loop works. }
 {$MODE OBJFPC}{$H-}
 uses Tester, About;

@@ -1,5 +1,5 @@
 program SvgaText;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Rotating text for thirty seconds, in SVGA if the card can do it and mode 13h
   if it cannot.
 

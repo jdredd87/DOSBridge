@@ -1,5 +1,5 @@
 program MemMap;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Walk the DOS memory control block chain and show every allocation.
 
   Usage:  MEMMAP            list every MCB

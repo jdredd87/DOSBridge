@@ -1,5 +1,5 @@
 program Devs;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { List the installed DOS device drivers by walking the device chain.
 
   Usage:  DEVS                list every device in the chain

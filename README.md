@@ -1,6 +1,6 @@
-# DOS Bridge — build 65
+# DOS Bridge — build 66
 
-_Built 2026-09-22 from `C:\dosbridgeDEV`._
+_Built 2026-09-26 from `C:\dosbridgeDEV`._
 
 Run and test DOS software on a real 8086-class DOS machine from your Windows
 command line, over whatever network card that machine has. Claude Code drives
@@ -733,3 +733,12 @@ anything. The parts that cost the most to rediscover:
   reason. `KNET` holding the IP handle stops the box polling at all. Both
   report it in `/S`, and `KNET` releases itself after an idle timeout, but the
   rule stands: unload it in the same job that loaded it.
+
+---
+
+## Credits
+
+Written by **StevenC** and **Claude** (Anthropic): StevenC guiding, deciding and testing on real hardware, Claude doing most of the analysis, code and measurement.
+
+The tools on the DOS machine say so too: every one prints
+`DOS Bridge tools -- StevenC & Claude` from the `About` unit.

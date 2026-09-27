@@ -20,7 +20,7 @@ care which is on the end of it:
 | | |
 |---|---|
 | the original | **NEC V30**, MS-DOS 6.22, **an 8087 fitted**, VBE video with 1 MB. About 514 KB free heap. **Sits beside the router** |
-| the second | **Gateway 2000 386SX/25**, MS-DOS 6.22, no 387. 515 KB free, BIOS of 03/25/92, VGA colour. **Is DOWNSTAIRS, on a noticeably weaker link** |
+| the second | **RETIRED 2026-09-26 -- not on the bridge.** **Gateway 2000 386SX/25**, MS-DOS 6.22, no 387. 515 KB free, BIOS of 03/25/92, VGA colour. **Was DOWNSTAIRS on a noticeably weaker link until 2026-09-23, when it moved into the V30's room** because the link had become spotty all the time (1 MB over HTGET swinging 10-101 s). Everything below about "downstairs" describes it before that move. **Its PicoMEM 1 then died, the same afternoon -- confirmed dead in more than one machine, so the 386SX has no card and is off the bridge until it gets one** -- after a night and a day of dropouts, a failure to rejoin WiFi after a power cut, and link deaths that happened in the V30's room too. So the later 386 "link" faults were at least partly a card failing, not distance alone |
 
 **Where the machines physically are is bridge configuration, not trivia.**
 The 386SX's distance from the AP is why it loses whole job RESULTS while the
@@ -40,7 +40,46 @@ fixture. **Both cards were read off their ROMs on 2026-09-21:**
 | | card | BIOS date | board id |
 |---|---|---|---|
 | V30 | **PicoMEM 2** | 2026-06-16 | 11, parameter area at +886 |
-| 386SX | **PicoMEM 1** | 2025-11-02 | not reported (all three bytes 0), parameter area at +374 |
+| 386SX | **PicoMEM 1** -- **DEAD 2026-09-23**, fails in any machine | 2025-11-02 | not reported (all three bytes 0), parameter area at +374 |
+
+**THE 386SX IS RETIRED, 2026-09-26 -- StevenC's decision. Do not test on
+it, and do not plan work around it.** It is gone from `boxes.json` (and its
+plug history from `power.state`), so the V30 with the PicoMEM 2 is the one
+box on the bridge and the default for every command. Everything else this
+file says about the 386SX is history, kept because what it found still
+applies to code written here: the INT 10h hook, the 256-byte environment,
+and "run on both -- gate at run time" for any 386 someone else has.
+
+Its last day, for the record: with the PicoMEM 1 it ran `PM2000` SC5
+CRC-exact, at the original's speed. With the **PicoMEM 2** it never got a
+packet out -- not on the original driver, not on SC2 -- although the card
+reported WiFi joined at -36 dB, and **SC5 locked the machine up**, which SC2
+(the same code with the register pauses kept) did not. That was not
+resolved; `CH375USB/PicoMEM/netdrv/README.md` carries it as a known issue.
+
+The two paragraphs below are 2026-09-25, when the cards and SD cards were
+crossed; they stay as the record of why an id is checked before it is
+trusted.
+
+**2026-09-25: the cards moved again, and the 386SX is NOT dead-and-idle any
+more.** Per StevenC, **the 386SX has the PicoMEM 2 and is busy with other
+work -- do not run jobs on it, reboot it or cycle its plug (`.205`) unless
+StevenC says so.** It is not polling this bridge (`v30` reads STALE), and
+which SD card it has was not established. That instruction came after the
+386SX's plug had already been cycled once by mistake at ~19:40, by the
+box-id/plug confusion described next.
+
+**The V30 is running a PicoMEM 1 and the 386SX's SD card.**
+StevenC put "the PicoMEM 1.11 board" in the V30; `PMINFO` reads BIOS
+2025-11-02, no board id, parameter area at +374 -- the same firmware as the
+card recorded dead above, and whether it is that board was not
+established. Because the SD card is the 386's, **the V30 boots the 386's
+`NET.CFG` and polls as `sx386` from `.67`**, while `v30` shows STALE.
+Nothing warns about that (`docs/multibox.md`, "Also not built"), and it
+splits two commands from each other: **a box id follows the SD card, a
+smart plug and the capture stick follow the machine.** `dospower cycle
+--box sx386` cut the 386SX's plug; the V30's is still `--box v30`. After
+any swap, run `FPU.EXE` and `PMINFO.EXE` before trusting an id.
 
 **Identify the card with `CH375USB/PicoMEM/bin/PMINFO.EXE`, which reads the
 BIOS date out of the ROM, rather than inferring it from the machine.** This
@@ -83,7 +122,13 @@ at run time, never at compile time.
 | Windows box | runs `dosd.py` on ports 8080/8081/8082, plus UDP 8069 |
 | DOS box | polls for jobs at a static address; see below |
 
-**BOTH MACHINES ARE NOW ON THE BRIDGE AT ONCE.** There are two SD cards, so
+**Since 2026-09-26 there is ONE machine again: the 386SX is retired and
+`boxes.json` lists only `v30`.** The multi-box support stays built and
+working -- `--box` is accepted, and a second machine goes back in with one
+`boxes.json` entry -- so the paragraph below describes the capability, not
+the current fleet.
+
+**BOTH MACHINES WERE ON THE BRIDGE AT ONCE, 2026-09-21 to 09-26.** There are two SD cards, so
 the "one at a time" above is history: `boxes.json` registers the V30 and the
 386SX at their own addresses and one `dosd` serves both. Every command takes
 `--box ID`, and `--box all` runs it on both and prints the answers side by
@@ -170,7 +215,7 @@ this repo does not match it** — deploying `dos/AUTOEXEC.BAT` as `README.md` st
 
 | | on the box |
 |---|---|
-| packet driver | `C:\drivers\pm2000.com 0x60` (PicoMEM native, not NE2000) |
+| packet driver | `C:\drivers\pm2000.com 0x60` (PicoMEM native, not NE2000). **On the V30 since 2026-09-23 that file is our rebuilt `0.5-SC5`** (StevenC and Claude), about 27% faster; the shipped one is `C:\DRIVERS\PM2000.ORG`. **The 386SX's SD card has it too since 2026-09-25**, measured on a PicoMEM 1 in the V30 (about 20% faster, every CRC exact) and in the 386SX on 2026-09-26 (same speed -- a 386 already had the fast copy -- and CRC-exact through the fixed `REP INSW` path); with a PicoMEM 2 in the 386SX it locked the machine up (see the retirement note at the top); its original is also at `C:\PMNET\ORIG.COM`, because **DOS will not run a `.ORG`** -- a live swap back to it unloads the driver and loads nothing. `docs/network.md` has why |
 | addressing | `DHCP` |
 | mTCP | `C:\NETWORK\MTCP`, config `c:\network\mtcp\mtcp.cfg` |
 | boot chain | `CONFIG.SYS` → `AUTOEXEC.BAT` → `cd AI` → `C:\AI\AI.BAT` |
@@ -225,6 +270,16 @@ what the tools test to decide a lease has expired. Backups on the box are
 corrected 2026-08-31 by pulling the real one. The better, never-deployed
 version is now `dos/AUTOEXEC.proposed.bat`; it is what would put
 `C:\TOOLS` on the box's PATH.
+
+**It happened again on the 386SX, 2026-09-23, and the bridge hid it.** Its
+own SD card's `MTCP.CFG` had `DHCPVER`, `TIMESTAMP`, `HOSTNAME_ASSIGNED` and
+`LEASE_TIME` stamped in -- someone ran `DHCP.EXE` at the keyboard while
+chasing the WiFi -- and once the 8 hours were up every mTCP tool printed
+"Your DHCP lease has expired!" and quit. **The agent kept polling
+perfectly**, because `UGET`/`UPUT` are our own stack and read `C:\AI\NET.CFG`,
+not `MTCP.CFG`; only a job that ran `HTGET` found out. Fixed by deleting
+those four lines (the stamped file is kept as `MTCP.DHC`). **After anyone
+has been at a box's keyboard fixing the network, `TYPE` its `MTCP.CFG`.**
 
 Symptom to recognise: the box stops polling and never comes back on its own,
 while `dosd` is plainly still listening on 8080/8081/8082. Check with `netstat`
@@ -296,6 +351,22 @@ runs and still prints to the CONSOLE, but the batch can no longer open
 also exactly what a missing program looks like, so it reads as the wrong
 fault entirely. `doscap` is what identifies it, from "Extended Error 4" on
 the DOS screen. A warm reboot clears it.
+
+**There is no `SHELL=` line, so the environment is DOS's default 256
+bytes, and the 386SX's SD card fills it.** Its `AUTOEXEC.BAT` and agent set
+`PATH` (95 bytes), `MTCPCFG`, `TEMP`, `SRV`, `UPHOST`, `BOXID` and `TZ`,
+which leaves no room for the `SET RC=` of the errorlevel ladder dosd puts
+at the end of every job. Seen 2026-09-25 as `Out of environment space` on
+the box's screen after every job, and `rc FAILED` in the agent's log line:
+**the output still comes back, only the exit code is lost** -- so a job
+can read as failed when it worked. `dosexec "SET TEMP="` frees enough until
+the next boot (jobs run in the agent's own shell, so it sticks), **but it
+leaves `TEMP` set to a single space** -- the generated line ends in one --
+and then every `|` pipe fails silently, because COMMAND.COM builds a pipe
+from temp files in `%TEMP%`. Batch files here redirect to a file instead.
+The cure is `SHELL=C:\COMMAND.COM C:\ /E:1024 /P` in `CONFIG.SYS`, **added
+by StevenC at the keyboard, not over the bridge** -- see "Never write to
+CONFIG.SYS" below.
 
 **Both `device=` lines are commented out, and the reason is a hazard worth
 knowing before putting anything on the ISA bus.** The comment on the box
@@ -604,7 +675,8 @@ get a bad-command message into the captured output. Call them by full path,
 DSTAT [path]              recursive file/dir/byte totals + top directories
 DEVS                      list the DOS device chain
 DEVS NAME                 exit 0 if character device NAME is loaded, else 1
-HD file [ofs] [len]       hex dump + CRC-32 of any file
+HD file [ofs] [len]       hex dump + CRC-32 of any file. ~64 KB/s on the
+                          V30 (was 16 before 2026-09-25): 10 MB is ~3 min
 SCRAPE [/A] [/R]          capture the TEXT screen and print it through DOS
 VSHOT [/K]                capture a mode 13h screen as ASCII art
 MEMMAP [/F] [/S]          walk the MCB chain: every block, owner, size
@@ -669,6 +741,15 @@ NTP [a.b.c.d]             what time does that server think it is? Our own
 UGET ip name file [POLL]  fetch a file from dosd over UDP. The HTGET
                           replacement. Silent unless -V; honest exit code
 UPUT ip file name         send a file to dosd over UDP. The NC replacement
+NETCHK ip | /PROBE ip | /OK | /STATUS
+                          the agent's "is it us or them?" check. On every
+                          30th failed poll it ARPs the server, then the
+                          router; only if NEITHER answers -- or there is
+                          no packet driver at all, since 2026-09-25 --
+                          does it tell AI.BAT to cold-boot, at most 3
+                          times an outage.
+                          /STATUS prints C:\AGENT\NETCHK.LOG. See
+                          docs/network.md, "The link that does not come back"
 ELAPSED /S | <text>       job stopwatch. /S stashes the tick; otherwise
                           prints <text> with the time since, on ONE row
 ```
@@ -758,7 +839,7 @@ FPC runs before the main program body, so the line lands above whatever header
 the tool prints for itself:
 
 ```
-DOS Bridge tools  --  StevenC
+DOS Bridge tools  --  StevenC & Claude  --  built 2026/09/23
 === sysinfo ===
 ```
 
@@ -771,6 +852,45 @@ nobody runs it. Verified: all 29 EXEs carry both `DOS Bridge` and `StevenC`.
 
 Adding it to a new tool is one word in the uses clause. Nothing to call, and
 nothing to forget.
+
+**Credit StevenC AND Claude on anything new -- StevenC's standing rule,
+2026-09-23.** "Make sure Claude is mentioned too in anything we do. I am
+guiding you, but you are doing the heavy lifting." So every new program
+banner, source header, README and changelog entry names both, in the form
+the PicoMEM driver set:
+
+```
+Optimized by StevenC & Claude: ...                          (a banner line)
+Written by **StevenC** and **Claude** (Anthropic): ...      (a README)
+```
+
+A `Co-Authored-By: Claude` commit trailer does not count on its own -- the
+credit belongs where a reader sees it. Every README and CHANGELOG in this repo
+and in `C:\CH375USB` says so as of that date, and `C:\CH375USB\CLAUDE.md`
+carries the same rule for a session opened there.
+
+**Every binary was rebuilt with the new credit on 2026-09-24**, at
+StevenC's request: the `About` banner above, every starter tool, and every
+program and driver in `C:\CH375USB` (`USBKBD 1.7.1 -- StevenC & Claude` and
+the rest), then deployed to the V30 -- 35 tools to `C:\TOOLS` and 82
+programs to `C:\CH375\`, every one CRC-checked on the box. Versions were not
+bumped -- no code changed -- so two builds of, say, `USBKBD 1.7.1` exist;
+the CRC tells them apart, and each project's CHANGELOG records the rebuild.
+A README that quotes a banner quotes the new one. Historical transcripts in
+the docs (a banner with a date on it) stay as they were printed.
+
+**Silent by design, so not credited in their output**: `UGET`, `UPUT`,
+`NETCHK`, `KEYHIT`, `SCRLOFF` and `ELAPSED` run inside the agent loop or a
+job, where a banner would print on every poll; `KINJ` and `KNET` are
+resident. Their source headers carry the credit. **`UGET` and `UPUT` were
+deliberately NOT replaced**: a fresh build came out ~400 bytes smaller than
+the committed one from unchanged sources (the old binary was made from some
+other compiler/unit state), so shipping it would have swapped the V30's
+proven transport for an unproven one, with nobody at the machine, for a
+change that adds no credit. The committed binaries -- CRC `A3B45BDD` and
+`8FA5110E`, the ones on the box -- stay until the transport changes for its
+own reasons. `NTP.EXE` rebuilt ~420 bytes smaller the same way and did ship:
+it is not in the transport.
 
 ## Hard constraints — these are not style preferences
 

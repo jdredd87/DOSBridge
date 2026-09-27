@@ -1,5 +1,5 @@
 program Serial;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { RS232 / UART inspection.
 
   Usage:  SERIAL              probe every COM port the BIOS knows about

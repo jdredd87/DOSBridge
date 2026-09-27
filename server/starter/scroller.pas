@@ -1,5 +1,5 @@
 program Scroller;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { A thirty-second side-scrolling landscape with sprites and AdLib music.
   Measured on the NEC V30 box on 2026-09-01: 70.4 fps, one vertical refresh
   per frame, ZERO late frames -- which is as fast as a 320x200 VGA goes.

@@ -1,5 +1,5 @@
 unit PmDet;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Is there a PicoMEM in this machine, and what is it?
 
   STRICTLY READ-ONLY.  It asks the card BIOS one question through INT 13h and

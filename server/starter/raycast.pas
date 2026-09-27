@@ -1,5 +1,5 @@
 program Raycast;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { A Wolfenstein-style raycaster in unchained VGA mode X, with textured walls.
   Walks itself round a 64x64 maze, or is driven -- from the keyboard, or from
   a script, which is the same thing with nobody at the machine.

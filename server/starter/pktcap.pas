@@ -1,5 +1,5 @@
 program PktCap;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Capture Ethernet frames straight from the packet driver, in Pascal.
 
   Usage:  PKTCAP                 5 seconds of ARP (ethertype 0806h)

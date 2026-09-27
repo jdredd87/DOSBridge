@@ -1,5 +1,5 @@
 program SysInfo;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { A more realistic example: reports what the machine actually is, and shows
   the pattern for a hardware test you'd drive from Claude Code.
 

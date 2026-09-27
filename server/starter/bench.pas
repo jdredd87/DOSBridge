@@ -1,5 +1,5 @@
 program Bench;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Measure what this machine is actually fast and slow at.
 
   Usage:  BENCH [ticks-per-test]     default 18, about one second each

@@ -1,5 +1,5 @@
 program HexDump;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Hex dump a file, on the DOS side.
 
   Usage:  HD file [offset] [count]      default: first 256 bytes
@@ -20,7 +20,7 @@ uses About;
 const
   PERLINE  = 16;
   DEFCOUNT = 256;
-  BUFSZ    = 512;
+  BUFSZ    = 8192;
 
 var
   F        : file;
@@ -75,13 +75,53 @@ begin
   end;
 end;
 
-procedure CrcUpdate(const B: array of Byte; N: Integer);
+{ One block through the table, in assembly. The Pascal it replaced did a
+  32-bit shift and two 32-bit XORs per byte through FPC's LongInt helpers,
+  and CRCed about 11 KB/s on the V30 -- a 10 MB file took a quarter of an
+  hour, long enough to look like a hung download (2026-09-25). Here the CRC
+  lives in DX:AX, the shift right by 8 is three byte moves, and the table
+  is read as the two words of each LongInt. }
+procedure CrcUpdate(var B; N: Word);
 var
-  K: Integer;
+  CLo, CHi, BSeg, BOfs, TSeg, TOfs: Word;
 begin
-  for K := 0 to N - 1 do
-    Crc := CrcTab[(Crc xor LongInt(B[K])) and $FF] xor
-           ((Crc shr 8) and $00FFFFFF);
+  if N = 0 then Exit;
+  CLo  := Word(Crc);
+  CHi  := Word(Crc shr 16);
+  BSeg := Seg(B);  BOfs := System.Ofs(B);
+  TSeg := Seg(CrcTab);  TOfs := System.Ofs(CrcTab);
+  asm
+    push ds
+    push si
+    push di
+    mov  ax, CLo
+    mov  dx, CHi
+    mov  cx, N
+    mov  si, BOfs
+    mov  di, TOfs
+    mov  es, TSeg
+    mov  ds, BSeg
+  @next:
+    mov  bl, [si]
+    inc  si
+    xor  bl, al
+    xor  bh, bh
+    shl  bx, 1
+    shl  bx, 1
+    mov  al, ah
+    mov  ah, dl
+    mov  dl, dh
+    xor  dh, dh
+    xor  ax, es:[di + bx]
+    xor  dx, es:[di + bx + 2]
+    loop @next
+    pop  di
+    pop  si
+    pop  ds
+    mov  CLo, ax
+    mov  CHi, dx
+  end;
+  Crc := LongInt(CLo) or (LongInt(CHi) shl 16);
 end;
 
 procedure FlushLine;

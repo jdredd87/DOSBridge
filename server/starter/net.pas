@@ -1,6 +1,6 @@
 { net.pas -- IPv4 and UDP on top of the packet driver.
 
-  DOS Bridge  --  StevenC
+  DOS Bridge  --  StevenC & Claude
 
   WHY THIS EXISTS
 

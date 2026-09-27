@@ -1,5 +1,5 @@
 program Beep;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Make the DOS machine ask for a human.
 
   Usage:  BEEP                    one 880 Hz note

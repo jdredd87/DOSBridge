@@ -1,5 +1,13 @@
 # More than one DOS box at a time
 
+> **2026-09-26: back to one box.** The 386SX is retired and gone from
+> `boxes.json`; the V30 is the only machine. Everything below still works
+> and still describes the code -- adding a machine again is one
+> `boxes.json` entry -- but the "two real machines" in the examples and
+> measurements are history. A running `dosd` keeps showing a removed box
+> as `NOT in boxes.json` until it is restarted; that is leftover state,
+> not a fault.
+
 **Phases 1 to 6 are built, and phase 0 turned out not to be needed.** The
 design below was written 2026-09-21 while the bridge still talked to one
 machine; it was implemented the same day and is kept whole, because the
@@ -808,6 +816,30 @@ Getting there needed a host-side fix that had nothing to do with any of this
 Not built, and still worth building: **reservations** (`dosctl claim`), and
 the **`KNET` broadcast** problem, which remains exactly as described above --
 one `KNET` at a time, by hand, for now.
+
+**Also not built: the MEASURED identity check** -- layer 3 under "Identity"
+above. `expect` in `boxes.json` is parsed by `boxes.expectations()` and read
+by nothing. It was listed as the guard that catches "the SD card having been
+moved to the other machine", and **on 2026-09-25 exactly that happened and
+nothing noticed.** The 386SX's SD card went into the V30 with a PicoMEM 1,
+so the V30 booted the 386's `NET.CFG`, polled from `.67`, and was routed as
+`sx386` for hours. `FPU.EXE` said `NEC V20/V30` against an `expect` of
+`386`, and no warning was printed anywhere. It cost one wrong power cut:
+
+* **A box id follows the SD card; a smart plug follows the machine.**
+  `dospower cycle --box sx386` switched the 386SX's plug (`.205`) -- a
+  machine with no card in it, so nothing was lost -- while the V30 sat
+  unchanged. The V30's plug was `--box v30`, the id whose SD card was not in
+  it. `doscap` has the same split in the other direction: the capture stick
+  is wired to the V30, so `doscap` (default `v30`) showed the right screen
+  only because the V30 is the only machine it can see.
+
+Until the check exists: **after any card or SD swap, run `FPU.EXE` and
+`PMINFO.EXE` on the box and compare with `dosctl boxes`**, and pick a plug by
+the machine it is plugged into, not by the id the box is polling as. Building
+it is small -- one `FPU`/`PMINFO` job on the first poll after a box goes from
+stale to alive, compared against `expect`, and a loud line in the log and in
+`dosctl status` on a mismatch.
 
 ### The finding that made phase 4 optional
 

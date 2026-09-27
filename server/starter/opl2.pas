@@ -1,5 +1,5 @@
 unit Opl2;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { AdLib / OPL2 (Yamaha YM3812) plumbing: detection, register writes with the
   settling delays the chip needs, voice patches, and note on/off.
 

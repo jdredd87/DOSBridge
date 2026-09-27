@@ -1,5 +1,5 @@
 program MouseTest;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Exercise the mouse through the INT 33h driver API.
 
   Usage:  MOUSE [seconds]        default 10

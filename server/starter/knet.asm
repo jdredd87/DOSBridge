@@ -1,7 +1,7 @@
 ; ======================================================================
 ;  KNET.COM -- live remote keyboard for the DOS box, over the network.
 ;
-;  DOS Bridge  --  StevenC
+;  DOS Bridge  --  StevenC & Claude
 ;
 ;  You type on the Windows side; the keystrokes arrive here as UDP and are
 ;  handed to whatever program is running, as though they came from the

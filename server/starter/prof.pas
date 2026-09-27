@@ -1,5 +1,5 @@
 unit Prof;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Section timing and stack high-water marking for programs on the DOS machine.
 
   Add `uses Prof;` then:

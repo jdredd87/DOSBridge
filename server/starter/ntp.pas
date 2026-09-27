@@ -1,4 +1,4 @@
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { ntp.pas -- ask an NTP server what time it is, over our own UDP.
 
   This was the first program to send and receive IP on our own stack, and it

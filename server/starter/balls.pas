@@ -1,5 +1,5 @@
 program Balls;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Bouncing balls in VGA mode 13h for ten seconds, then quit.
 
   The mode 13h plumbing -- retrace sync, DAC writes, span fill, the mono/colour

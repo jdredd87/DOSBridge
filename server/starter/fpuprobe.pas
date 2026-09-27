@@ -1,5 +1,5 @@
 program FpuProbe;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { A diagnostic for one question: is a coprocessor answering, and how long does
   it take to answer?
 

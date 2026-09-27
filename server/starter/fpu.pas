@@ -1,5 +1,5 @@
 program FpuTest;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Math coprocessor: is one fitted, which one, and does it compute correctly.
 
   Usage:  FPU           detect and report. Runs NO arithmetic. Safe.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 r"""
-DOS Bridge  --  StevenC
+DOS Bridge  --  StevenC & Claude
 
 power.py -- optional smart-plug control, so a wedged DOS box can be recovered
 without somebody walking over to it.

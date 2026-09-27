@@ -540,6 +540,158 @@ loss and needs no hardware changed. If the 386SX is ever moved nearer the
 AP, or put on a better antenna, expect these symptoms to disappear -- and if
 they do not, then the card is worth looking at.
 
+## The packet driver itself: `PM2000` 0.5-SC5, 2026-09-23
+
+**The V30 boots a rebuilt `PM2000.COM`.** Its source, build and every
+measurement live in the CH375USB repo under `PicoMEM/netdrv/`; its README is
+the account. The short version, because it changes what "the link" means
+when anything here is timed:
+
+* The shipped driver picks its copy loop with Crynwr's shift-count test, and
+  **an NEC V20/V30 answers "8086"** -- so the V30 moved every packet one
+  byte per `IN`/`STOSB`. SC1 detects NEC with `AAD` and uses `REP INSB` /
+  `REP OUTSB`: **HTGET 10 MB went from 76.5 s to 60.9 s**, CRC-exact.
+* SC2 fixed an over-read on the 186-and-later `REP INSW` path (one word past
+  the DMA count on every even-length read); SC3 dropped the dummy port-61h
+  read before each NIC register access. SC3 is worth only 1-2% more -- which
+  is the finding: **the driver is no longer where the time goes.** What is
+  left per packet is mTCP, the card's WiFi bridge and round trips.
+* SC4 and SC5 are SC3 plus attribution only -- the banner line and a header
+  note in `PM2000.ASM`, crediting StevenC and Claude -- so their timings
+  are SC3's.
+
+`C:\DRIVERS\PM2000.COM` **is** SC5 on the V30 (CRC `5C800029`); the shipped
+0.5 is kept beside it as `PM2000.ORG` (CRC `51D19522`), and `AUTOEXEC.BAT`
+was not touched. To go back, at the keyboard or over the bridge:
+`COPY C:\DRIVERS\PM2000.ORG C:\DRIVERS\PM2000.COM` and reboot. A loaded
+copy says which it is: the banner reads `0.5-SC5` with a second line, `Optimized by StevenC & Claude: ...`, and `PKTDRV` shows its
+handler at `...:03D0` where the original's is `...:03CE`.
+
+**Numbers timed before 2026-09-23 on the V30 were taken on the original
+driver** and are not comparable with later ones without saying so.
+
+**On a PicoMEM 1 too, 2026-09-25.** With a PicoMEM 1 (BIOS 2025-11-02) and
+the 386SX's SD card in the V30, both drivers were run twice through the
+same `NETBENCH`, now with 5 and 10 MB written to disk and CRC-checked:
+
+| | shipped 0.5 | SC5 | |
+|---|---|---|---|
+| 1 MB to `NUL` | 9.2 / 9.3 s | 7.8 / 7.9 s | **+18%** |
+| 5 MB to `NUL` | 41.0 / 42.1 s | 34.3 / 34.4 s | **+21%** |
+| 10 MB to `NUL` | 76.2 / 78.7 s | 64.8 / 64.8 s | **+20%** |
+| 5 MB to disk | 75.7 s | 68.4 / 69.5 s | +10% |
+| 10 MB to disk | 141.7 s | 128.0 / 128.9 s | +10% |
+
+Every disk run on both drivers came back CRC-exact. SC5 is that card's
+boot driver now. The disk rows gain half as much for the reason the
+PicoMEM 2 figures gave: the disk is the same card, and nothing here
+touches how it writes. `CH375USB/PicoMEM/netdrv/README.md` has the rest.
+
+**On the 386SX, 2026-09-26, with that PicoMEM 1 moved into it: the same
+speed on both drivers** -- 10 MB in 28.5 s shipped against 28.4 s SC5,
+averaged over 4 and 7 interleaved runs, 1 MB and 1 MB-to-disk equal to a
+tenth of a second over 6-12 runs each -- and every 1/5/10 MB CRC exact.
+A 386 took `REP INSW` in the shipped driver already, so SC5 is only the
+over-read fix there, and it costs nothing. The more useful number is the
+comparison with the V30: **the same card moves 10 MB in 28 s in the 386
+against 65 s in the V30**, so the V30's ceiling is its CPU running mTCP.
+
+**A driver swap needs a name DOS will run.** The shipped copy is kept as
+`PM2000.ORG`, and a job that did `PM2000.COM -u 0x60` then
+`PM2000.ORG 0x60` unloaded the driver and loaded nothing -- COMMAND.COM
+only runs `.COM`, `.EXE` and `.BAT`. That box now also carries it as
+`C:\PMNET\ORIG.COM`, and `NETCHK` reboots a box with no driver (below).
+
+## The link that does not come back: `NETCHK`, 2026-09-22
+
+The 386SX stopped polling at 22:41 with no job running, and stayed silent
+for half an hour. The agent loop was fine throughout: its screen showed
+`UGET: no ARP reply from <server>` on every retry. From this side the
+neighbour table went `Probe` then `Unreachable` for the box while the V30
+beside it read `Reachable`. So the link was dead in **both directions** and
+the software on both ends was healthy. The plug read 84 W, so the machine
+had power. A power cycle brought it straight back: polling again 70 s after
+power returned.
+
+Nothing in the loop could have fixed that, because a failed poll only ever
+led to another poll. And a box that has lost its link cannot ask for help,
+so it has to decide for itself. `NETCHK` is that decision. `AI.BAT` runs it
+on every failed poll; on every 30th (about four minutes) it ARPs:
+
+| | | |
+|---|---|---|
+| the server answers | our link is fine, dosd is down | keep polling |
+| only the **router** answers | the WiFi is up, the server's host is not | keep polling |
+| neither answers | **our** link is dead | errorlevel 3, `AI.BAT` runs `COLDBOOT.COM` |
+
+It uses ARP rather than ping, and the router rather than the internet. ARP
+needs nothing `net.pas` does not already have, and every router answers it.
+Pinging an internet host would need DNS and ICMP, and would only add "is
+the router's uplink up", which a LAN-only bridge does not care about.
+
+**The loop guard is two files in `C:\AGENT`, and each half matters:**
+
+* `NETFAIL.DAT`: failed polls this BOOT. `AI.BAT` deletes it on start,
+  so a fresh boot must fail a full 30 polls before it may reboot again. A
+  reboot can never follow straight on from a reboot.
+* `NETBOOT.DAT`: reboots this OUTAGE. It survives the reboot, and only a
+  poll that works clears it (`NETCHK /OK`). After 3 reboots it stops
+  rebooting and just polls, and says so once on the screen.
+
+Every probe and decision is appended to `C:\AGENT\NETCHK.LOG` (capped at
+16 KB), so an outage nobody watched can be read afterwards:
+`dosexec "C:\TOOLS\NETCHK.EXE /STATUS"`. It is silent on the console
+except when it decides something, and then only when the verdict changes.
+
+**Verified on the 386 on 2026-09-22**, without breaking the link. `/PROBE`
+gave all three verdicts correctly against the real server, an unused
+address (the router answered), and unused addresses for both. The counter
+and guard were run against a scratch `/DIR`: a reboot at the threshold,
+none after the limit, and `/OK` logging the recovery. `COLDBOOT.COM` is
+confirmed on the 386 (back in 18 s).
+
+**NOT yet known: whether a cold boot restores the WiFi the way a power cut
+did.** A software reboot does not reset the Pico on the card. If it turns
+out not to be enough, the log will show three REBOOT lines and no
+RECOVERED. The next step then is the Windows side: cycle the box's plug
+when it has been silent for minutes AND fails the neighbour-table check
+above. Neither has been built. Also unknown: whether the router answered
+during the 2026-09-22 outage. If the next outage logs "router answers",
+the card had lost this host rather than the network, and `NETCHK` will
+decline to reboot for it.
+
+**No packet driver now counts as a dead link, 2026-09-25.** `NETCHK`
+used to stop at "no packet driver" and keep polling forever, on the
+reasoning that a missing driver is a boot problem and rebooting into the
+same boot fixes nothing. That day a job unloaded the V30's driver and then
+tried to reload the original from `C:\DRIVERS\PM2000.ORG` -- a name
+COMMAND.COM will not execute -- and the box sat printing `no packet driver
+found on vectors 60h..80h` twice per poll until a power cut. That is the
+one fault a reboot certainly cures. It now goes through the same counter
+and the same guard as a dead link: every 30th failed poll it reboots, at
+most 3 times an outage, and a genuinely broken `AUTOEXEC.BAT` costs those 3
+reboots and then quiet polling -- what a dead link has always cost.
+`/PROBE` still refuses, having nothing to probe with. The screen line is
+`[offline] no packet driver - rebooting (1 of 3)`.
+
+**Verified on the V30 the same evening, on purpose**: a job unloaded the
+driver at 20:09, and with nobody near the machine `NETCHK.LOG` then read
+
+```
+2026-09-25 20:18:08 30 failed polls: no packet driver: no packet driver found on vectors 60h..80h - REBOOT 1 of 3
+2026-09-25 20:18:54 RECOVERED: polling again after 1 reboot(s)
+```
+
+and the box was back on its boot driver. Nine minutes, because a poll with
+no driver takes about 18 s. The old code had logged one `no packet driver`
+line per poll for 15 minutes and never acted; the new one logs only its
+decisions, like the link-dead path always did.
+
+Deployed to the 386 only (build 65+ agent, which also stamped
+`BOXID=sx386` for the first time). The V30 is still on the previous
+agent, and needs `NETCHK.EXE` in `C:\TOOLS` before its agent is upgraded.
+The agent skips the check if the tool is missing, so either order is safe.
+
 ## The Windows firewall, 2026-09-21: the fault that is not on the wire
 
 Before suspecting anything in this file, check that the polls are arriving at

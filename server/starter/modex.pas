@@ -1,5 +1,5 @@
 unit ModeX;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Unchained 320x200x256 ("mode X"), with a virtual screen wider than the
   display, so scrolling costs two register writes instead of a screenful of
   pixels.

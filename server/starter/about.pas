@@ -1,5 +1,5 @@
 unit About;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Attribution for every tool in the suite, in exactly one place.
 
   Add `About` to a program's uses clause and it prints the banner. Nothing
@@ -23,7 +23,7 @@ interface
 
 const
   PRODUCT = 'DOS Bridge';
-  AUTHOR  = 'StevenC';
+  AUTHOR  = 'StevenC & Claude';
   BUILT   = {$I %DATE%};
 
 { The single line every tool prints before its own output. }

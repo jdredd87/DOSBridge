@@ -1,5 +1,5 @@
 program AMozart;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Mozart's Eine kleine Nachtmusik (K.525, first movement opening), extended and
   in two voices, played on an AdLib / OPL2 (Yamaha YM3812) card.
 

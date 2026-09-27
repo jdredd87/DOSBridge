@@ -1,5 +1,5 @@
 unit Mystery;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { A mystery theme for the raycaster, on an AdLib / OPL2, driven from a frame
   loop.
 

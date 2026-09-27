@@ -1,5 +1,5 @@
 unit Kbd;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { KEY STATE, NOT KEYSTROKES: which keys are held down at this instant.
 
   Everything in starter/ that has wanted the keyboard so far has wanted a

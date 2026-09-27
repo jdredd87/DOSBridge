@@ -1,5 +1,5 @@
 program GTest;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Draw a known test pattern in mode 13h and leave the mode set.
 
   Usage:  GTEST

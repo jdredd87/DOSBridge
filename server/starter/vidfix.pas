@@ -1,5 +1,5 @@
 unit VidFix;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Put INT 10h back when the runtime has hooked it with a coprocessor stub.
 
   WHAT GOES WRONG.  Free Pascal's i8086 runtime installs a coprocessor-error

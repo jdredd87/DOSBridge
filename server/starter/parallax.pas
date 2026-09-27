@@ -1,5 +1,5 @@
 program Parallax;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { NEON DRIFT -- a mode X parallax demo with an OPL2 soundtrack.
 
   Everything here is plain 8086 and runs on any DOS box with a VGA.  It was

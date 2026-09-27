@@ -1,4 +1,4 @@
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { uput.pas -- send a file to dosd over our own UDP. The NC replacement.
 
     UPUT 192.168.1.10 C:\WORK\RES.TXT result

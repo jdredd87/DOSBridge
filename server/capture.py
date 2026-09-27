@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 r"""
-DOS Bridge  --  StevenC
+DOS Bridge  --  StevenC & Claude
 
 capture.py -- optional video capture, so the DOS box's REAL video output can
 be seen, recorded and photographed from the Windows side.

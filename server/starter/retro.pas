@@ -1,5 +1,5 @@
 unit Retro;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { The demo's soundtrack: a four-voice retro chiptune on the AdLib / OPL2 --
   which on the machine this was written for is not an AdLib at all but the
   one a PicoMEM emulates at 388h.  Nothing here knows the difference, and

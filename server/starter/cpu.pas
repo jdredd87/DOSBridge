@@ -1,5 +1,5 @@
 unit Cpu;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Work out what processor this actually is, at run time.
 
   Everything in starter/ is built with -Pi8086 and sticks to the plain 8086

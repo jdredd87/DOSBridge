@@ -159,6 +159,17 @@ Use it after `dosdrv`, and note it only matches *character* devices by name.
 Python's `zlib.crc32`, verified on a 25872-byte file, so a deployed file can be
 checked against the Windows copy without transferring it.
 
+**Its CRC loop was slow enough to pass for a hung download, until
+2026-09-25.** The Pascal did a `LongInt` shift and two `LongInt` XORs per
+byte, which FPC's 8086 code runs through helper routines, over a 512-byte
+buffer: about **16 KB/s** on the V30. A job that downloaded 10 MB and then
+ran `HD` on it took twelve and a half minutes, and read as a transfer that
+had stalled -- the download itself had taken 128 s. The loop is now 8086
+assembly, the CRC held in `DX:AX` and the shift right by 8 done as three
+byte moves, over an 8 KB buffer: **1 MB in 16.4 s against 63.3 s**, the same
+file on the same machine, both giving the server copy's `04D0E435`. That is
+still ~64 KB/s, so a 10 MB check is about three minutes: budget for it.
+
 ## PIT channel 0 is in MODE 3, so sub-tick timing is ambiguous by half a tick
 
 **Found on 2026-09-21 while chasing a frame-timing problem in

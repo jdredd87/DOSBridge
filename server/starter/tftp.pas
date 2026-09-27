@@ -1,6 +1,6 @@
 { tftp.pas -- TFTP over our own UDP, both directions.
 
-  DOS Bridge  --  StevenC
+  DOS Bridge  --  StevenC & Claude
 
   WHY TFTP AND NOT HTTP
 

@@ -1,5 +1,5 @@
 program Fractal;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Mandelbrot set in VGA mode 13h for ten seconds, then quit.
 
   The mode 13h plumbing lives in the VGA unit. What is left here is the maths.

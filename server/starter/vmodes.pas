@@ -1,5 +1,5 @@
 program VModes;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Every video mode this card offers, and -- optionally -- whether each one
   actually works when you set it.
 

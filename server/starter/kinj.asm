@@ -1,4 +1,4 @@
-; KINJ.COM  --  DOS Bridge  --  StevenC
+; KINJ.COM  --  DOS Bridge  --  StevenC & Claude
 ;
 ; A resident keystroke injector and screen grabber, so an INTERACTIVE program
 ; on the DOS box can be driven and watched from Windows.

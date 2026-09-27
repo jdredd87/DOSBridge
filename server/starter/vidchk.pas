@@ -1,5 +1,5 @@
 program VidChk;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Is this machine on a colour or a mono display?
 
   HWINFO already prints this among thirty other lines. What it cannot give you

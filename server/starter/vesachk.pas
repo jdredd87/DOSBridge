@@ -1,5 +1,5 @@
 program VesaChk;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { What SVGA (VESA VBE) modes, if any, does this card offer?
 
   Reports through DOS so the answer survives the trip back over the bridge.

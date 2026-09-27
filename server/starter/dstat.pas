@@ -1,5 +1,5 @@
 program DStat;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Recursive directory statistics, summarised on the DOS side.
 
   Usage:  DSTAT [path]           default: current directory

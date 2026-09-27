@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DOS Bridge  --  StevenC
+DOS Bridge  --  StevenC & Claude
 
 dosd - job server bridging a Windows dev box to a real DOS machine over WiFi.
 

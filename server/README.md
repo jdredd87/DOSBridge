@@ -663,3 +663,12 @@ anything. The parts that cost the most to rediscover:
   reason. `KNET` holding the IP handle stops the box polling at all. Both
   report it in `/S`, and `KNET` releases itself after an idle timeout, but the
   rule stands: unload it in the same job that loaded it.
+
+---
+
+## Credits
+
+Written by **StevenC** and **Claude** (Anthropic): StevenC guiding, deciding and testing on real hardware, Claude doing most of the analysis, code and measurement.
+
+The tools on the DOS machine say so too: every one prints
+`DOS Bridge tools -- StevenC & Claude` from the `About` unit.

@@ -1,5 +1,5 @@
 unit Tester;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Minimal test harness for DOS programs driven by dosbridge.
 
   Everything prints through DOS calls (WriteLn), never direct video writes,

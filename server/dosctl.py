@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DOS Bridge  --  StevenC
+DOS Bridge  --  StevenC & Claude
 
 dosctl - run things on the real DOS machine from the Windows command line.
 

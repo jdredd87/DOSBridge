@@ -368,6 +368,13 @@ Until the battery is replaced:
 * A warm `dosreboot` does not trigger it. Prefer it over a power cut whenever
   the box is still answering.
 
+**On 2026-09-25 a cycle of the V30's plug came straight back**: DOS,
+the packet driver and the agent banner on `doscap` inside a minute, no F1
+prompt. One success is not a cure -- it was running the 386SX's SD card
+and a PicoMEM 1 that day, and whether POST halts may depend on what the
+BIOS finds -- but it is no longer "a cycle never recovers this box". Still
+check the screen before scoring a cycle.
+
 Note this is entirely separate from the mid-run freezes. Those happen on a
 machine that has already booted and is polling, and nothing about POST
 explains them.
@@ -391,6 +398,27 @@ Verified on hardware 2026-09-03 against a Shelly Plug US Gen4
 (`S4PL-00116US`, fw 2.0.0): two real cuts, and the box was **polling again 21
 and 29 seconds after power returned**, answering `dosexec "VER"` immediately
 after.
+
+**The 386SX has its own plug as of 2026-09-22**, the same model and
+firmware, set as a per-box override in `boxes.json`
+(`"power": { "host": ..., "channel": 0 }`) so `dospower --box sx386` switches
+it and `--box v30` still switches the original. `dospower status` reads it
+correctly.
+
+**A cut recovers the 386 unattended**, unlike the V30: cycled 2026-09-22 at
+22:24:43 with a 6 s off, polling again at 22:25:56 -- **about 70 s after
+power returned**, against the V30's 21-29 s. `dosctl`'s own wait after a
+cut (`_watch_box`, 420 s) covers that with room to spare; a hand-rolled
+wait tuned on the V30 would not. Afterwards
+`VER`, `FPU` (none, rc 1 as expected), `VIDCHK` (colour) and `HWINFO` were
+all normal, and `PHASE.LOG` carried straight on.
+
+Watch the watts, not only the relay. The plug read **~31 W before** the cut
+and **~82-85 W after**, flat, while polling normally. The most likely reason
+is that something else on the same outlet, most likely the monitor, was in
+standby before and came up on the cold boot. So "how many watts" has no
+single healthy value for this box. Find out what shares the outlet before
+reading a wattage as a fault.
 
 **It is off by default and the installer cannot turn it on.** `power.py` and
 `power.example.json` ship; `power.json` does not, and with no such file every

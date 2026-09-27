@@ -1,5 +1,5 @@
 program HwInfo;
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { Everything the machine will tell us about itself, in one call.
 
   Usage:  HWINFO

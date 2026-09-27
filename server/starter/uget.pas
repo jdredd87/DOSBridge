@@ -1,4 +1,4 @@
-{ DOS Bridge  --  StevenC }
+{ DOS Bridge  --  StevenC & Claude }
 { uget.pas -- fetch a file from dosd over our own UDP.
 
     UGET 192.168.1.10 starter/HELLO.EXE C:\WORK\HELLO.EXE
