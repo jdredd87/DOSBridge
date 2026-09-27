@@ -33,8 +33,8 @@ Microsoft has open-sourced.
 * **The word** is what runs back from the cursor to a blank or one of
   `; , = + < > | " /` (and `^T`).  Only the part before the cursor is
   matched; the whole word is replaced -- TAB in the middle of `autoexec.b|at`
-  gives `autoexec.bat`, not `autoexec.batat`.  With the cursor at the start
-  of a word, the name goes in front of it.
+  gives `autoexec.bat`, not `autoexec.batat`; at the start of a word it
+  completes from nothing and replaces that word.
 * **The pattern** is that part plus `*.*` (plus `*` if it already has a
   dot), so `\dos\m`, `*.bat` and `config.s` all work, and a directory or
   drive in front of the name is kept exactly as typed.
@@ -43,8 +43,11 @@ Microsoft has open-sourced.
   (SHIFT+TAB the greatest before it) and wraps; there is no list kept in
   memory, so it costs a directory scan per press and not a byte of buffer.
 * **Case** follows the nearest letter before the cursor: typing in lower
-  case gets `autoexec.bat`.  Directories get a `\` after them; any other
-  key (End will do) ends the cycle, so the next TAB goes inside.
+  case gets `autoexec.bat`.
+* **Directories get no `\` after them**, because `CD` will not take one:
+  `CD \DOS\` is "Invalid directory" on MS-DOS 6.22.  (The first release
+  added one -- StevenC found it at the keyboard on the first day.)  To go
+  inside, type the `\` and TAB again -- any key but TAB ends the cycle.
 * **Found by** find-first/next with attribute 10h -- hidden and system
   files are not offered, `.` and `..` are skipped.  While it looks, INT 24h
   answers Fail and INT 23h is ignored, so a drive with no disk finds nothing
@@ -83,7 +86,7 @@ insert flag and beeps:
 | the test is sharp | three one-line bugs planted in DOSKEYSC (Down on an empty line, `^U`'s width, the 258-byte history floor) are each caught |
 
 TAB is the one thing with nothing to compare against, so `test\tabtest.py`
-holds it to 92 directed cases (the line each must give, over a made-up
+holds it to 94 directed cases (the line each must give, over a made-up
 disk) and 2,000 random sessions after each of which the screen must show
 exactly the prompt and the line, nothing left over, cursor at the end.
 
@@ -97,13 +100,13 @@ after every line; `test\hwcheck.py` makes the same report in the emulator.
 |---|---|---|
 | 6.22's DOSKEY, 52-line editing script | 1,431 | **0** |
 | DOSKEYSC, the same script | 1,431 | **0** -- and byte-identical to 6.22's report |
-| DOSKEYSC, TAB over the V30's own `C:\` and `C:\DOS` | 15 lines | all as expected, including a drive that does not exist |
+| DOSKEYSC, TAB over the V30's own `C:\`, `C:\DOS` and `C:\DRIVERS` | 17 lines | all as expected, including a drive that does not exist |
 
 What it costs there:
 
 | | |
 |---|---|
-| memory (`MEM /C`, 512-byte buffer) | 4,144 bytes for 6.22's DOSKEY, **4,944** for DOSKEYSC -- the TAB code and its state are most of the difference |
+| memory (`MEM /C`, 512-byte buffer) | 4,144 bytes for 6.22's DOSKEY, **4,928** for DOSKEYSC -- the TAB code and its state are most of the difference |
 | a TAB in `C:\DOS` (132 files) | about 0.24 s on the V30 -- a directory scan per press |
 | a TAB in `C:\` (32 names) | about 0.04 s |
 

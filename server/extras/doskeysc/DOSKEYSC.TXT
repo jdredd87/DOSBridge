@@ -10,12 +10,13 @@ WHAT IT IS
     SHIFT+TAB    the one before
 
   Type part of a name -- TYPE AU, CD \DO, COPY C:\DOS\ME -- and press TAB.
-  A directory gets a "\" after it; press END (or any key) and TAB again
-  to go on inside it. The name comes in lower case if you are typing in
-  lower case. Pressing TAB inside a word completes from the part before
-  the cursor and replaces the whole word. Hidden and system files are
-  not offered; no match leaves the line as it was. A drive with no disk
-  in it just finds nothing -- there is no "Abort, Retry, Fail?".
+  A directory comes without a "\" after it, so CD takes it; to go on
+  inside it, type the "\" and press TAB again. The name comes in lower
+  case if you are typing in lower case. Pressing TAB inside a word
+  completes from the part before the cursor and replaces the whole word.
+  Hidden and system files are not offered; no match leaves the line as
+  it was. A drive with no disk in it just finds nothing -- there is no
+  "Abort, Retry, Fail?".
 
   It is written from a study of MS-DOS 6.22's DOSKEY and contains none of
   its code. Measured in an emulator against 6.22's DOSKEY on thousands of

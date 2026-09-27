@@ -1485,7 +1485,9 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 68 is public** (2026-09-27: the kit's demos in `client\DEMOS`, their
+* **Build 69 is public** (2026-09-27: `extras/doskeysc`, DOSKEYSC -- 6.22's
+  DOSKEY key for key plus TAB filename completion, in `client\EXTRAS`).
+  **Build 68** (2026-09-27: the kit's demos in `client\DEMOS`, their
   sources in `starter/demos`). **Build 67** (2026-09-27) added the optional `extras/` -- ANSISC, the
   fast 6.22-exact ANSI.SYS, and UMBSC, the UMB manager with no low memory
   -- in `client\EXTRAS` and `server\extras`), at

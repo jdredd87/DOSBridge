@@ -1493,8 +1493,9 @@ k_tab:  cmp     byte [tc_on], 0
         mov     di, tc_last
         mov     cx, 13
         rep     movsb
-        ; what goes in: the name, in the case being typed, '\' after a
-        ; directory; the directory part before it stays as it was typed
+        ; what goes in: the name, in the case being typed.  A directory
+        ; gets no '\' after it: CD will not take one.  The directory part
+        ; before the name stays as it was typed
         call    tcase                   ; AL = 20h to make it lower case
         mov     ah, al
         mov     si, tc_best
@@ -1509,11 +1510,7 @@ k_tab:  cmp     byte [tc_on], 0
         or      al, ah
 .nm1:   stosb
         jmp     .nm
-.nmd:   test    byte [tc_best+13], 10h
-        jz      .nmx
-        mov     al, '\'
-        stosb
-.nmx:   sub     di, tc_wrap
+.nmd:   sub     di, tc_wrap
         mov     [tc_nl], di
         mov     al, [tc_dir]
         xor     ah, ah
@@ -1522,8 +1519,6 @@ k_tab:  cmp     byte [tc_on], 0
         mov     si, [v_cur]             ; the rest of the word goes too --
         cmp     byte [tc_on], 2         ; but only the first time: after
         je      .wed                    ; that, just the name we put in
-        cmp     si, [tc_ws]             ; and not if the cursor is at its
-        je      .wed                    ; start: the name goes in front
 .we:    cmp     si, [v_len]
         jae     .wed
         mov     al, [si+v_line]
