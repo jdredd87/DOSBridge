@@ -39,6 +39,7 @@
 unit Tftp;
 
 {$MODE OBJFPC}{$H-}
+{$ASMMODE INTEL}
 
 interface
 
@@ -111,6 +112,15 @@ var
   TftpWin     : Word;
   TftpGaps    : LongInt;
   TftpPeerTID : Word;
+  { Set by the caller BEFORE a get: keep a CRC-32 of the data as it is
+    accepted.  TftpCrc is the running value -- xor it with $FFFFFFFF for
+    the number HD prints.  Only in-order blocks are ever accepted and a
+    restart resumes at TftpBytes, so it covers exactly the bytes in the file.
+    105 KB/s on the V30 (crctest.pas), so 512 KB costs ~5 s on top of a
+    6.6 s fetch -- against 8.7 s for HD to read the file back.  Off unless
+    asked for. }
+  TftpDoCrc   : Boolean;
+  TftpCrc     : LongInt;
 
 { FirstWait is separate from the per-block timeout because the job poll is a
   long poll: the server deliberately holds the request open for several
@@ -121,6 +131,8 @@ function TftpGet(SrvPort: Word; const Remote, Local: ShortString;
 function TftpPut(SrvPort: Word; const Local, Remote: ShortString): Boolean;
 
 implementation
+
+{$I crc32.inc}
 
 const
   { Budgets sized for a lossy link, and sized to OUTLAST the server's.
@@ -441,6 +453,8 @@ begin
   WLen := 0;
   TftpWin := 1; InWin := 0; TftpGaps := 0;
   DupAcked := False; GapAcked := False;
+  TftpCrc := LongInt($FFFFFFFF);
+  if TftpDoCrc then Crc32Init;
 
   PickPort;
   RQLen := BuildRQ(OP_RRQ, Remote);
@@ -701,6 +715,11 @@ begin
             Break;
           end;
         Move(RxP[4], WBuf[WLen], DataLen);
+        { Here, block by block, and not after the window's ACK: that was
+          tried (2026-09-28) and bought nothing -- on the V30 receiving is
+          CPU-bound, the frames arriving during the CRC cost it the same
+          time either way, and it overflowed the 8-slot ring. }
+        if TftpDoCrc then Crc32Upd(TftpCrc, RxP[4], DataLen);
         Inc(WLen, DataLen);
         TftpBytes := TftpBytes + DataLen;
       end;

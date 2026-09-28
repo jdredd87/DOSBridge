@@ -1197,6 +1197,47 @@ only to a client that asks.
 `projects/dostune/test_window_put.py` is the upload's loopback test;
 `simulate_dos.py` sends windowed as UPUT does; `selftest.py` passes.
 
+### Faster deploys (2026-09-28)
+
+With the transfer itself quick, the deploy job was mostly not transfer.  A
+512 KB `dosdeploy` on the V30, timed a step at a time: UGET 7.4 s, HD
+reading the file back for its CRC 8.7 s, COPY to `.BAK` 3.3 s, COPY into
+place 3.4 s, DELs 1.0 s -- 27.4 s on the box.  Two changes, neither
+touching the protocol:
+
+* **RENamed, not copied.**  The download lands in the destination's own
+  directory as `DEPLOY.TMP`; the old file is RENamed to `.BAK` and
+  `DEPLOY.TMP` to its name.  A REN rewrites a directory entry.  Both guards
+  hold -- nothing is touched until the CRC has passed, and the outgoing copy
+  is kept.  The batch now also says so when the destination is not a
+  directory, rather than failing the download into a path that is not
+  there.  On the box: 16 s.
+* **The CRC checked as the data arrives.**  `UGET -C <crc>` keeps a CRC-32
+  of every in-order block it accepts -- a restart resumes at the byte
+  count, so that is exactly the file -- and prints `CRC OK <crc>` or
+  `CRC BAD got .. want ..` (rc 3, file kept).  dosd's batch redirects that
+  into `C:\WORK\CRC.TXT` and trusts only the OK line: an older UGET ignores
+  the option and prints nothing, and the HD pass runs as it always did.
+  That is also how the new UGET got onto the box -- the old one fetched it
+  and HD checked it.  On the box: **12.7-13.5 s**.
+
+The CRC is `starter/crc32.inc`: table-driven, the table at offset 0 of its
+own segment so the index needs no base, four bytes a pass.  **105 KB/s on
+the V30** (86 before the unrolling); `crctest.pas` checks it against a
+bit-by-bit reference over every length to 300 and every split into two
+calls -- 45,452 cases, 0 differ.  (Its first version recomputed the
+reference for every split, and the V30 took 37 minutes over it.)
+
+512 KB, UGET to a file on the V30: 6.5 s plain, **11.5 s with `-C`** --
+against 6.5 + 8.7 with HD.  The CRC's ~5 s of CPU is simply added, and
+that is the finding worth keeping: **receiving is CPU-bound on this
+machine.**  Moving the CRC to after each window's ACK, so it would run
+while the next window was on the wire, bought nothing -- the frames
+arriving during it cost the same CPU -- and it overflowed the 8-slot ring
+(102 frames dropped, 17 s), because foreign broadcasts take slots too.  A
+16-slot ring stopped the drops and still took 11.4 s.  So the CRC stays at
+the `Move`, block by block, and the ring stays at 8.
+
 ## The original investigation: large transfers are NOT ARP
 
 Kept as history: this is how the large-transfer problem looked while it was

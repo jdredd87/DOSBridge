@@ -825,7 +825,9 @@ KNET [port] | /T | /S | /U
 NTP [a.b.c.d]             what time does that server think it is? Our own
                           UDP, not mTCP. Read-only -- it never sets the clock
 UGET ip name file [POLL]  fetch a file from dosd over UDP. The HTGET
-                          replacement. Silent unless -V; honest exit code
+                          replacement. Silent unless -V; honest exit code.
+                          -C crc checks a CRC-32 as it arrives: prints
+                          CRC OK / CRC BAD, rc 3 on a mismatch
 UPUT ip file name         send a file to dosd over UDP. The NC replacement
 NETCHK ip | /PROBE ip | /OK | /STATUS
                           the agent's "is it us or them?" check. On every
@@ -978,11 +980,14 @@ change that adds no credit. Those binaries -- CRC `A3B45BDD` and
 it did on 2026-09-27 (below): first to `UGET` `502A18C8` / `UPUT`
 `C944798B`, then the same evening to **`UGET` `BA664B1B` and `UPUT`
 `490331F7`** -- windowed downloads and a receive ring -- and that night
-**`UPUT` `4FDD4D3E`**, windowed uploads, all proven on the V30.  Earlier
-copies are on the box as `C:\TOOLS\UGET.OLD`/`UPUT.OLD` (before any of
-it), `UGET.PRV`/`UPUT.PRV` (before the window) and `UPUT.PR2` (before the
-windowed upload); DOS will not run them under those names -- copy one over
-the `.EXE` to go back. `NTP.EXE`
+**`UPUT` `4FDD4D3E`**, windowed uploads, all proven on the V30.  On
+2026-09-28 **`UGET` `BCB9EEA3`** added `-C`, a CRC-32 checked as the data
+arrives (below).  **One fallback pair is kept on the box**:
+`C:\TOOLS\UGET.BAK` (`BA664B1B`) and `UPUT.BAK` (`490331F7`), the two
+builds proven together on the evening of 2026-09-27; DOS will not run them
+under those names -- copy one over the `.EXE` to go back.  The older copies
+(`.OLD`, `.PRV`, `.PR2`, `.SAF`, `UGETF`/`UPUTF`) were deleted that day;
+every one of them is in git history. `NTP.EXE`
 rebuilt ~420 bytes smaller the same way and did ship: it is not in the
 transport.
 
@@ -1004,6 +1009,14 @@ and dallies 3 s on the last block (its lost final ACK used to make a
 completed upload look failed).  512 KB `dospull` 57.6 s -> 10.0 s over the
 day.  `DOSD_TEST_DROP` / `DOSD_TEST_DROP_RX` inject loss for testing.  **Changing the transport now means changing
 `simulate_dos.py` too** -- it asks for the window the way UGET does.
+
+**Deploys got faster on 2026-09-28**: the download lands in the
+destination's own directory and is RENamed into place instead of COPYed
+twice, and `UGET -C <crc>` checks a CRC-32 as the data arrives
+(`starter/crc32.inc`, 105 KB/s on the V30, proven by `crctest.pas` over
+45,452 cases) instead of HD reading the file back.  512 KB on the box:
+~22 s -> 13 s.  The batch trusts only a `CRC OK <crc>` line; an older UGET
+ignores `-C`, and the HD check runs as before.
 
 ## Hard constraints — these are not style preferences
 
@@ -1545,7 +1558,8 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 73 is public** (2026-09-27: windowed downloads, TFTP windowsize 8).
+* **Build 74 is public** (2026-09-27: windowed uploads too).
+  **Build 73** (2026-09-27: windowed downloads, TFTP windowsize 8).
   **Build 72** (2026-09-27: the transport 4x faster, same protocol --
   `docs/network.md`, "Where the time went"). **Build 71** (2026-09-27: DOSKEYSC's TAB remembers the next eight
   names, 5x faster cycling). **Build 70** (2026-09-27: DOSKEYSC, a directory completes with no
@@ -1589,8 +1603,8 @@ What is installed and working, as opposed to what is written up:
   locked to two refreshes, band repaint 11.7ms against 14.27ms of beam, city
   coverage equal at both ends of the sweep (198 and 198 of 320 columns), the
   8087 winning the table race 1067ms to 3850ms, and 461 notes of OPL2 through
-  the PicoMEM's emulated AdLib. It is **not** in a public build yet -- cutting
-  one is a separate deliberate step.
+  the PicoMEM's emulated AdLib. It has shipped in `client\DEMOS` since
+  build 68.
 
   Three of its findings are general and are in the topic docs rather than
   here: the pixel pan is latched a refresh later than the start address
@@ -1618,8 +1632,8 @@ dump off the modem through a Keyspan, `FOSDET` both ways round, and
 Known not exercised: `dosctl stop` over the wire (the flag arrives from Windows
 rather than the keyboard, same `:QUIT` path), `dosreboot --cold`, `HANG.SYS`,
 and the 186/286 branch of the CPU probe -- `AAD` answers NEC first and
-short-circuits it; the 386 branch is confirmed on the Gateway 2000 386SX/25. `selftest.py` has not been run since the transport moved to
-UGET/UPUT, because it needs the ports `dosd` is holding.
+short-circuits it; the 386 branch is confirmed on the Gateway 2000 386SX/25. `selftest.py` passes on the
+windowed transport (2026-09-27), run with `dosd` stopped.
 
 The verification record behind all of this, and the quiet-failure gap that
 `PEND.BAT` and `DRVOUT.TXT` were written to close, is in `docs/agent.md`.

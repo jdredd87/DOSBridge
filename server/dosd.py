@@ -922,7 +922,17 @@ def build_pull_batch(job_id, remote_path):
 
 
 
-def verify_then_install(name, dest):
+def deploy_crc(name):
+    """The CRC-32 of a staged file as HD and UGET -C print it, or None."""
+    rel = safe_rel(name)
+    src = rel_to_path(rel) if rel else None
+    if src and os.path.isfile(src):
+        with open(src, "rb") as fh:
+            return "%08X" % (zlib.crc32(fh.read()) & 0xFFFFFFFF)
+    return None
+
+
+def verify_then_install(name, dest, tmp):
     r"""Check the download's CRC-32 on the box, then swap it into place.
 
     This exists because of 2026-09-02, when a deploy of UGET.EXE fetched the
@@ -943,17 +953,27 @@ def verify_then_install(name, dest):
       .BAK, so recovery is one COPY at the keyboard rather than a hand-typed
       HTGET against a URL. Same reasoning as C:\AI\AI.BAK for the agent.
 
+    **Renamed into place, not copied** (2026-09-27): the download lands in
+    the destination directory as DEPLOY.TMP, and two RENs -- the old file to
+    .BAK, DEPLOY.TMP to its name -- replace two COPYs of the whole file.  On
+    the V30 those copies were 6.7 s of a 27 s deploy of 512 KB; a REN only
+    rewrites a directory entry.  It keeps both guards: nothing is touched
+    until the checksum has passed, and the old file is still kept.
+
+    **Checked as it arrives** (2026-09-28): the fetch passes `-C <crc>` and
+    UGET keeps a CRC-32 of the data while receiving it, printing
+    `CRC OK <crc>` into C:\WORK\CRC.TXT.  That line, and only that line,
+    skips the HD pass -- 8.7 s of a 512 KB deploy on the V30, spent reading
+    back a file that had just been written.  An older UGET ignores `-C` and
+    prints nothing, `CRC BAD` goes straight to BADCRC, and anything else
+    falls through to HD exactly as before.
+
     A box with no HD.EXE yet -- a fresh install -- skips the checksum and
     falls back to the existence test, because refusing to deploy the tools
     onto a machine that has none of them would be a fine way to make the
     installer unusable.
     """
-    rel = safe_rel(name)
-    src = rel_to_path(rel) if rel else None
-    want = None
-    if src and os.path.isfile(src):
-        with open(src, "rb") as fh:
-            want = "%08X" % (zlib.crc32(fh.read()) & 0xFFFFFFFF)
+    want = deploy_crc(name)
 
     bak = dest.rsplit(".", 1)[0] + ".BAK" if "." in dest.rsplit(
         chr(92), 1)[-1] else dest + ".BAK"
@@ -961,18 +981,27 @@ def verify_then_install(name, dest):
     lines = []
     if want:
         lines += [
+            'FIND "CRC OK %s" C:\\WORK\\CRC.TXT > NUL' % want,
+            "IF NOT ERRORLEVEL 1 GOTO NOCRC",
+            'FIND "CRC BAD" C:\\WORK\\CRC.TXT > NUL',
+            "IF NOT ERRORLEVEL 1 GOTO BADCRC",
             "IF NOT EXIST %s GOTO NOCRC" % HD_DOS,
             "IF EXIST C:\\WORK\\CRC.TXT DEL C:\\WORK\\CRC.TXT",
-            "%s C:\\WORK\\DEPLOY.TMP 0 1 > C:\\WORK\\CRC.TXT" % HD_DOS,
+            "%s %s 0 1 > C:\\WORK\\CRC.TXT" % (HD_DOS, tmp),
             'FIND "%s" C:\\WORK\\CRC.TXT > NUL' % want,
             "IF ERRORLEVEL 1 GOTO BADCRC",
             ":NOCRC",
         ]
-    lines += [
-        "IF EXIST %s COPY %s %s > NUL" % (dest, dest, bak),
-        "COPY C:\\WORK\\DEPLOY.TMP %s > NUL" % dest,
-        "DEL C:\\WORK\\DEPLOY.TMP",
-    ]
+    leaf = dest.rsplit(chr(92), 1)[-1]
+    bakleaf = bak.rsplit(chr(92), 1)[-1]
+    if bak.upper() != dest.upper():
+        lines += [
+            "IF EXIST %s DEL %s" % (bak, bak),
+            "IF EXIST %s REN %s %s" % (dest, dest, bakleaf),
+        ]
+    else:
+        lines += ["IF EXIST %s DEL %s" % (dest, dest)]
+    lines += ["REN %s %s" % (tmp, leaf)]
     return lines
 
 
@@ -989,7 +1018,12 @@ def build_deploy_batch(job_id, name, dest_dir):
     exactly the right length passes it. `dosctl deploy` follows up with a
     CRC-32 from HD.EXE, which is the check that actually means something.
     """
-    dest = dest_dir.rstrip("\\") + "\\" + leaf_of(name)
+    ddir = dest_dir.rstrip("\\")
+    dest = ddir + "\\" + leaf_of(name)
+    # Downloaded into the destination's own directory, so it can be RENamed
+    # into place (see verify_then_install).
+    tmp = ddir + "\\DEPLOY.TMP"
+    want = deploy_crc(name)
     return [
         "@ECHO OFF",
         # "to", never "->". COMMAND.COM cannot escape a > inside an ECHO,
@@ -1016,10 +1050,16 @@ def build_deploy_batch(job_id, name, dest_dir):
         # Second: a download that fails now leaves the existing file alone
         # instead of destroying it. The old order deleted first and asked
         # questions later.
-        "IF EXIST C:\\WORK\\DEPLOY.TMP DEL C:\\WORK\\DEPLOY.TMP",
-        UGET_DOS + " %UPHOST% " + name + " C:\\WORK\\DEPLOY.TMP",
-        "IF NOT EXIST C:\\WORK\\DEPLOY.TMP GOTO NOFILE",
-    ] + verify_then_install(name, dest) + [
+        # A destination that is not a directory is said to be one, rather
+        # than showing up as a failed download into a path that is not there.
+        "IF NOT EXIST %s\\NUL GOTO NOCOPY" % ddir,
+        "IF EXIST %s DEL %s" % (tmp, tmp),
+        "IF EXIST C:\\WORK\\CRC.TXT DEL C:\\WORK\\CRC.TXT",
+        # -C: UGET checks the CRC as it receives (see verify_then_install).
+        UGET_DOS + " %UPHOST% " + name + " " + tmp
+        + (" -C %s > C:\\WORK\\CRC.TXT" % want if want else ""),
+        "IF NOT EXIST %s GOTO NOFILE" % tmp,
+    ] + verify_then_install(name, dest, tmp) + [
         "IF NOT EXIST %s GOTO NOCOPY" % dest,
         "ECHO ##JOB=%s > C:\\WORK\\RES.TXT" % job_id,
         "DIR %s >> C:\\WORK\\RES.TXT" % dest,
@@ -1028,6 +1068,7 @@ def build_deploy_batch(job_id, name, dest_dir):
         UPUT_DOS + " %UPHOST% C:\\WORK\\RES.TXT result",
         "GOTO END",
         ":BADCRC",
+        "IF EXIST %s DEL %s" % (tmp, tmp),
         job_foot(job_id, "FAILED - bad checksum, NOT installed"),
         "ECHO ##JOB=%s > C:\\WORK\\RES.TXT" % job_id,
         "ECHO dosd: %s arrived corrupt; the old copy was left in place"

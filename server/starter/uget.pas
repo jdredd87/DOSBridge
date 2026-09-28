@@ -12,6 +12,15 @@
   Exit codes:  0 the file arrived complete
                1 the transfer failed (the reason is printed)
                2 setup failed -- no packet driver, no config, ARP failed
+               3 -C was given and the CRC-32 did not match (file kept)
+
+  -C xxxxxxxx: the file's expected CRC-32, in hex, as HD prints it.  UGET
+  keeps a CRC of the data as it arrives and prints "CRC OK xxxxxxxx" or
+  "CRC BAD got xxxxxxxx want xxxxxxxx".  dosd's deploy batch looks for the
+  OK line, and only that: an older UGET ignores -C and prints nothing, and
+  the batch then falls back to reading the file back with HD.  Added
+  2026-09-28 (StevenC & Claude): it replaces that re-read, 8.7 s of a 512 KB
+  deploy on the V30.
 
   The exit code is HONEST, and that is a deliberate break with what came
   before: the old fetch tool returned >= 20 even on success, which is why
@@ -56,6 +65,8 @@ var
   NoSpin : Boolean;
   WantW  : LongInt;
   Code   : Integer;
+  WantCrc: LongInt;
+  HaveCrc: Boolean;
 
 { A heartbeat for the agent loop.
 
@@ -120,6 +131,7 @@ end;
 
 begin
   Opened := False;
+  HaveCrc := False; WantCrc := 0;
   Verbose := False;
   NoSpin := False;
   Poll := False;
@@ -173,6 +185,12 @@ begin
         Val(ParamStr(I + 1), WantW, Code);
         if Code <> 0 then WantW := 0;
       end;
+    if (A = '-C') or (A = '/C') then
+      if I < ParamCount then
+      begin
+        Val('$' + ParamStr(I + 1), WantCrc, Code);
+        HaveCrc := Code = 0;
+      end;
   end;
 
   if not NetReadConfig then
@@ -209,6 +227,7 @@ begin
   if Poll then TftpWantWin := 0 else TftpWantWin := WantW;
   if Poll then Wait := 73 else Wait := 36;
   if Poll and (not NoSpin) then NetIdleHook := @Heartbeat;
+  TftpDoCrc := HaveCrc and not Poll;
 
   Ok := TftpGet(TFTP_PORT, Remote, Local, Wait, True);
 
@@ -255,6 +274,17 @@ begin
       WriteLn('       during ', TftpRestarts, ' stall(s): rx ',
               TftpStallRx, ' seen, ', TftpStallWrong, ' not ours, ',
               TftpStallDrop, ' dropped, ', TftpStrays, ' stray');
+  end;
+  if TftpDoCrc then
+  begin
+    TftpCrc := TftpCrc xor LongInt($FFFFFFFF);
+    if TftpCrc = WantCrc then
+      WriteLn('CRC OK ', HexStr(TftpCrc, 8))
+    else
+    begin
+      WriteLn('CRC BAD got ', HexStr(TftpCrc, 8), ' want ', HexStr(WantCrc, 8));
+      Halt(3);
+    end;
   end;
   Halt(0);
 end.
