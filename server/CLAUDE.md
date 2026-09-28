@@ -353,6 +353,11 @@ LH C:\DOS\FASTOPEN.EXE C:=50                      as before)
 LH C:\drivers\pm2000.com 0x60
 ```
 
+**The disk was checked the same evening**: `CHKDSK` had found 23 lost
+allocation units in 7 chains (94 KB, from earlier crashes -- the biggest was
+an old AXPKT log); StevenC ran `CHKDSK /F` at the keyboard, the recovered
+`FILE000n.CHK` files were deleted, and `CHKDSK` now reports no errors.
+
 **A disk cache does not help this machine** -- `projects/cachesc` built one
 (CACHESC, correct, verified on the V30) and measured it: DOS's BUFFERS
 already hold what comes round, and everything outside 640 KB is the
@@ -968,10 +973,22 @@ deliberately NOT replaced**: a fresh build came out ~400 bytes smaller than
 the committed one from unchanged sources (the old binary was made from some
 other compiler/unit state), so shipping it would have swapped the V30's
 proven transport for an unproven one, with nobody at the machine, for a
-change that adds no credit. The committed binaries -- CRC `A3B45BDD` and
-`8FA5110E`, the ones on the box -- stay until the transport changes for its
-own reasons. `NTP.EXE` rebuilt ~420 bytes smaller the same way and did ship:
-it is not in the transport.
+change that adds no credit. Those binaries -- CRC `A3B45BDD` and
+`8FA5110E` -- stayed until the transport changed for its own reasons, which
+it did on 2026-09-27 (below): **the transport now is `UGET` `502A18C8` and
+`UPUT` `C944798B`**, proven on the V30 with StevenC at the machine, the old
+pair kept on the box as `C:\TOOLS\UGET.OLD` and `UPUT.OLD`. `NTP.EXE`
+rebuilt ~420 bytes smaller the same way and did ship: it is not in the
+transport.
+
+**The transport got 4x faster on 2026-09-27, without changing the
+protocol.** `docs/network.md`, "Where the time went", has it: the UDP
+checksum was Pascal calling a procedure per word (52 ms a 1400-byte block,
+now 3 ms in `starter/sumbuf.inc`, proven equal by `sumtest.pas` over 18,180
+cases), payloads were copied a byte at a time, and every block was its own
+disk write or read.  `dospull` of 512 KB: 57.6 s -> 13.8 s.  Still
+stop-and-wait -- the rule below about nothing on the wire while in DOS
+holds, and a sliding window is still undone.
 
 ## Hard constraints — these are not style preferences
 
@@ -1513,7 +1530,8 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 70 is public** (2026-09-27: DOSKEYSC, a directory completes with no
+* **Build 71 is public** (2026-09-27: DOSKEYSC's TAB remembers the next eight
+  names, 5x faster cycling). **Build 70** (2026-09-27: DOSKEYSC, a directory completes with no
   trailing `\`, which CD refuses). **Build 69** (2026-09-27: `extras/doskeysc`, DOSKEYSC -- 6.22's
   DOSKEY key for key plus TAB filename completion, in `client\EXTRAS`).
   **Build 68** (2026-09-27: the kit's demos in `client\DEMOS`, their

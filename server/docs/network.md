@@ -1080,6 +1080,47 @@ Three things in it are load-bearing, and two of them were bugs first:
   100 of them during the 5 MB run. Harmless, because they are retransmitted,
   but it is the next thing to look at for speed.
 
+### Where the time went: 4x faster, same protocol (2026-09-27)
+
+By **StevenC** and **Claude**, measured on the V30 with StevenC at the
+machine.  Fetching one 512 KB file (375 blocks of 1400) to a file took 22.1 s,
+**59 ms a block**; to `NUL` 16.8 s, so ~14 ms a block was the disk write and
+45 ms the rest.  Reading the DOS side of that 45 ms:
+
+| | cost per 1400-byte block | now |
+|---|---|---|
+| UDP checksum, on every datagram **sent** | **52 ms**: Pascal calling `AddW` per word (a call is ~21 us on the V30) | **3 ms**, one `ADC` a word (`starter/sumbuf.inc`) |
+| payload copied into/out of the frame | a byte loop with far-pointer indexing, ~7 ms | `Move` |
+| the disk | one DOS write (get) or read (put) per block, straddling sectors | 12 blocks (16.8 KB) a write or a read |
+
+The checksum was only ever paid on SENDS -- received datagrams are not
+checked -- so it cost uploads almost everything (every UPUT block) and
+downloads nearly nothing (4-byte ACKs).  That is why `dospull` was always
+the slow direction.
+
+The new sum is taken over little-endian words and byte-swapped at the end
+(a property of the one's complement sum); an odd trailing byte is the low
+byte of a little-endian word.  `starter/sumtest.pas` runs the new code
+(the same include file) against the old Pascal over every length 0-1514 at
+four offsets on random, all-FF and all-zero data: **18,180 cases, 0
+differ**, on the V30.
+
+The buffering keeps the one rule that matters: a block is ACKed only once
+it is in the buffer or on the disk, and the last block is flushed before
+its ACK, so nothing is on the wire while we are in DOS and "done" means
+the file is complete.  A put's read-ahead is thrown away at the `Seek` a
+restarted flow makes.
+
+| 512 KB, median of three, all byte-exact | before | after |
+|---|---|---|
+| `UGET` alone, to a file | 25.3-25.8 s | 8.0-13.1 s |
+| `dosdeploy` (includes the verify on the box) | 45.6 s | 30.7 s |
+| `dospull` | 57.6 s | **13.8 s** |
+
+Still stop-and-wait, one block in flight.  What is left is the round trip
+itself; a sliding window (RFC 7440 `windowsize`) would attack it, and would
+need `Net`'s single-slot receiver to become a ring first.
+
 ## The original investigation: large transfers are NOT ARP
 
 Kept as history: this is how the large-transfer problem looked while it was

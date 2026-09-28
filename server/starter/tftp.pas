@@ -166,9 +166,24 @@ type
     slack. Two of these is about 2.9 KB of the 514 KB heap. }
   TBuf = array[0 .. TFTP_BLK_MAX + 63] of Byte;
 
+const
+  { Received blocks are gathered here and written 12 at a time.  One
+    1400-byte write per block cost ~14 ms of the 59 ms each block took on
+    the V30 (2026-09-27): every write straddles sectors, so DOS reads,
+    patches and rewrites a partial one each time.  Twelve blocks per write
+    turns most of that into whole-sector writes.  Still stop-and-wait: a
+    block is ACKed only once it is in the buffer or on the disk, so nothing
+    is on the wire while we are in DOS. }
+  WBUF_SIZE = 12 * TFTP_BLK_MAX;
+
 var
   Pkt  : TBuf;               { outgoing }
   RxP  : TBuf;               { incoming }
+  WBuf : array[0 .. WBUF_SIZE - 1] of Byte;
+  WLen : Word;
+  { A put reads the file through the same buffer, 16.8 KB at a time: a get
+    and a put never run at once. }
+  RLen, RPos : Word;
   MyPort : Word;
 
 function Num(L: LongInt): ShortString;
@@ -297,6 +312,54 @@ begin
   ErrText := 'server said: ' + S;
 end;
 
+{ The gathered blocks to the file.  False if the disk would not take them. }
+function FlushW(var F: file): Boolean;
+var
+  Wrote: Word;
+begin
+  FlushW := True;
+  if WLen = 0 then Exit;
+  {$I-}
+  BlockWrite(F, WBuf, WLen, Wrote);
+  {$I+}
+  if (IOResult <> 0) or (Wrote <> WLen) then FlushW := False;
+  WLen := 0;
+end;
+
+{ N bytes (fewer at the end of the file) from the file into Dest, through
+  WBuf.  -1 if the disk would not read. }
+function ReadBlk(var F: file; var Dest; N: Word): Integer;
+var
+  Got, Take, R: Word;
+  D: PByte;
+begin
+  D := @Dest;
+  Got := 0;
+  while Got < N do
+  begin
+    if RPos >= RLen then
+    begin
+      {$I-}
+      BlockRead(F, WBuf, WBUF_SIZE, R);
+      {$I+}
+      if IOResult <> 0 then
+      begin
+        ReadBlk := -1;
+        Exit;
+      end;
+      RLen := R;
+      RPos := 0;
+      if R = 0 then Break;
+    end;
+    Take := RLen - RPos;
+    if Take > N - Got then Take := N - Got;
+    Move(WBuf[RPos], D[Got], Take);
+    Inc(RPos, Take);
+    Inc(Got, Take);
+  end;
+  ReadBlk := Got;
+end;
+
 function TftpGet(SrvPort: Word; const Remote, Local: ShortString;
                  FirstWait: LongInt; RetryFirst: Boolean): Boolean;
 var
@@ -323,6 +386,7 @@ begin
   TftpPeerTID := 0;
   FOpen := False;
   Done := False;
+  WLen := 0;
 
   PickPort;
   RQLen := BuildRQ(OP_RRQ, Remote);
@@ -563,17 +627,25 @@ begin
     begin
       if DataLen > 0 then
       begin
-        {$I-}
-        BlockWrite(F, RxP[4], DataLen, Wrote);
-        {$I+}
-        if (IOResult <> 0) or (Wrote <> Integer(DataLen)) then
+        if WLen + DataLen > WBUF_SIZE then
+          if not FlushW(F) then
+          begin
+            TftpErr := 'write failed at block ' + Num(Blk) + ' (disk full?)';
+            Break;
+          end;
+        Move(RxP[4], WBuf[WLen], DataLen);
+        Inc(WLen, DataLen);
+        TftpBytes := TftpBytes + DataLen;
+      end;
+      Inc(TftpBlocks);
+      { The last block: everything to the disk before it is ACKed, so a
+        "done" the server hears means the file is complete. }
+      if DataLen < TftpBlkSize then
+        if not FlushW(F) then
         begin
           TftpErr := 'write failed at block ' + Num(Blk) + ' (disk full?)';
           Break;
         end;
-        TftpBytes := TftpBytes + DataLen;
-      end;
-      Inc(TftpBlocks);
 
       PutW(Pkt, 0, OP_ACK);
       PutW(Pkt, 2, Blk);
@@ -735,12 +807,12 @@ begin
 
   Block   := 1;
   LastLen := TftpBlkSize;
+  RLen := 0;
+  RPos := 0;
   while not Done do
   begin
-    {$I-}
-    BlockRead(F, Pkt[4], TftpBlkSize, ReadLen);
-    {$I+}
-    if IOResult <> 0 then
+    ReadLen := ReadBlk(F, Pkt[4], TftpBlkSize);
+    if ReadLen < 0 then
     begin
       TftpErr := 'read failed on ' + Local;
       Break;
@@ -887,6 +959,8 @@ begin
       {$I-}
       Seek(F, TftpBytes);
       {$I+}
+      RLen := 0;                  { what was read ahead is from before }
+      RPos := 0;
       if IOResult <> 0 then
       begin
         TftpErr := 'seek failed on ' + Local;

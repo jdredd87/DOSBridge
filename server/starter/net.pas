@@ -424,18 +424,7 @@ begin
   if S < W then Inc(S);          { the carry wraps around to the low end }
 end;
 
-procedure SumBuf(var S: Word; var P: TPkt; Ofs, Len: Word);
-var I: Word;
-begin
-  I := 0;
-  while (I + 1) < Len do
-  begin
-    AddW(S, (Word(P[Ofs + I]) shl 8) or P[Ofs + I + 1]);
-    Inc(I, 2);
-  end;
-  { An odd trailing byte is padded on the right, not the left. }
-  if I < Len then AddW(S, Word(P[Ofs + I]) shl 8);
-end;
+{$I sumbuf.inc}
 
 function Fold(S: Word): Word;
 begin
@@ -1016,7 +1005,7 @@ begin
   PutW(TxBuf, 40, 0);                     { checksum, filled in below }
   { Guarded: Len is a Word, so "0 to Len - 1" with Len = 0 counts to 65535. }
   if Len > 0 then
-    for I := 0 to Len - 1 do TxBuf[42 + I] := Src^[I];
+    Move(Src^[0], TxBuf[42], Len);
 
   { UDP's checksum covers a pseudo-header of the IP addresses, the protocol
     and the UDP length, as well as the datagram itself. It is optional in
@@ -1150,8 +1139,10 @@ begin
               PayOfs := 14 + Ihl + 8;
               PayLen := UdpLen - 8;
               if PayLen > MaxLen then PayLen := MaxLen;
+              { Move, not a byte loop: the loop cost ~7 ms of a
+                1400-byte block on the V30 (2026-09-27). }
               if PayLen > 0 then
-                for I := 0 to PayLen - 1 do Dst^[I] := Shared.Buf[PayOfs + I];
+                Move(Shared.Buf[PayOfs], Dst^[0], PayLen);
               GotLen := PayLen;
               for I := 0 to 3 do NetFromIP[I] := Shared.Buf[14 + 12 + I];
               NetFromPort := GetW(Shared.Buf, 14 + Ihl);
