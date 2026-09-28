@@ -48,6 +48,10 @@ const
   NET_CFG = 'C:\AI\NET.CFG';
 
   NET_MAXPKT = 1520;           { one Ethernet frame, with slack }
+  NET_SLOTS  = 8;              { receive ring: a power of two }
+  NET_SLOTSZ = 2048;           { a slot: length word + frame, padded to 2^11 }
+  OFS_RHEAD  = 12 + NET_MAXPKT;
+  OFS_RING   = OFS_RHEAD + 2;
   NET_HDRLEN = 14 + 20 + 8;    { Ethernet + IPv4 + UDP }
   NET_MAXUDP = NET_MAXPKT - NET_HDRLEN;
 
@@ -217,6 +221,23 @@ type
     fields ahead of Buf -- see the comment on PktRecv. Buf is TPkt rather than
     an anonymous array so it can be passed to the parsing helpers: in Pascal
     an anonymous array type will not bind to a named one as a var parameter. }
+  { Frames arrive into a ring of slots, not straight into Buf.
+
+    A single slot was enough for stop-and-wait: one datagram in flight,
+    and Busy refused anything else that arrived while it was being read.
+    With several blocks in flight (TFTP windowsize, 2026-09-27) they arrive
+    back to back, faster than the main loop reads them, so the receiver
+    queues up to NET_SLOTS of them.  The interrupt handler owns RHead (it
+    fills slot RHead and then advances it); the main loop owns RTail -- so
+    neither ever read-modify-writes the other's counter.  Pump moves the
+    oldest queued frame into Buf when Buf is free, which is where every
+    parser already looks. }
+  TSlot = packed record
+    Len : Word;
+    Buf : TPkt;
+    Pad : array[0 .. NET_SLOTSZ - 2 - NET_MAXPKT - 1] of Byte;
+  end;
+
   TShared = packed record
     Busy     : Word;                                 { +0  }
     PktLen   : Word;                                 { +2  }
@@ -225,6 +246,9 @@ type
     BytesLo  : Word;                                 { +8  }
     BytesHi  : Word;                                 { +10 }
     Buf      : TPkt;                                 { +12 }
+    RHead    : Byte;                                 { OFS_RHEAD }
+    RTail    : Byte;                                 { OFS_RHEAD + 1 }
+    Ring     : array[0 .. NET_SLOTS - 1] of TSlot;   { OFS_RING, NET_SLOTSZ each }
   end;
 
 const
@@ -289,14 +313,25 @@ asm
   cmp  si, 0
   jne  @@second
 
-  cmp  word ptr [bx], 0
-  jne  @@refuse
+  { AX=0: a buffer for CX bytes -- the slot at RHead, if the ring has room }
   cmp  cx, NET_MAXPKT
   ja   @@refuse
+  mov  al, [bx + OFS_RHEAD]
+  sub  al, [bx + OFS_RHEAD + 1]
+  cmp  al, NET_SLOTS
+  jae  @@refuse
+  mov  al, [bx + OFS_RHEAD]
+  and  al, NET_SLOTS - 1
+  mov  ah, al
+  xor  al, al
+  shl  ah, 1
+  shl  ah, 1
+  shl  ah, 1                     { AX = slot * 2048 }
+  mov  di, bx
+  add  di, OFS_RING + 2
+  add  di, ax
   mov  ax, ds
   mov  es, ax
-  mov  di, bx
-  add  di, 12
   jmp  @@out
 
 @@refuse:
@@ -307,11 +342,22 @@ asm
   jmp  @@out
 
 @@second:
+  { AX=1: the frame is in slot RHead -- note its length, then publish it }
+  mov  al, [bx + OFS_RHEAD]
+  and  al, NET_SLOTS - 1
+  mov  ah, al
+  xor  al, al
+  shl  ah, 1
+  shl  ah, 1
+  shl  ah, 1
+  mov  si, bx
+  add  si, OFS_RING
+  add  si, ax
+  mov  [si], cx
+  inc  byte ptr [bx + OFS_RHEAD]
   inc  word ptr [bx + 4]
-  mov  word ptr [bx + 2], cx
   add  word ptr [bx + 8], cx
   adc  word ptr [bx + 10], 0
-  mov  word ptr [bx], 1
 
 @@out:
   pop  si
@@ -324,6 +370,31 @@ end;
 { ------------------------------------------------------------------ }
 {  Small helpers                                                      }
 { ------------------------------------------------------------------ }
+
+{ The oldest queued frame into Buf, if Buf is free.  Everything that reads
+  frames calls this before looking at Busy. }
+procedure Pump;
+var
+  S: Byte;
+  L: Word;
+begin
+  if (Shared.Busy = 0) and (Shared.RHead <> Shared.RTail) then
+  begin
+    S := Shared.RTail and (NET_SLOTS - 1);
+    L := Shared.Ring[S].Len;
+    Move(Shared.Ring[S].Buf, Shared.Buf, L);
+    Shared.PktLen := L;
+    Shared.Busy := 1;
+    Inc(Shared.RTail);
+  end;
+end;
+
+{ Forget every frame received and not yet read. }
+procedure Discard;
+begin
+  Shared.Busy := 0;
+  Shared.RTail := Shared.RHead;
+end;
 
 function NetTicks: LongInt;
 begin
@@ -594,7 +665,7 @@ var
   RSeg, ROfs: Word;
 begin
   MemW[Seg(Filt) : FOfs] := Swap(EtherType);   { the filter is network order }
-  Shared.Busy := 0;
+  Discard;
   RSeg := Seg(PktRecv);
   ROfs := Ofs(PktRecv);
   asm
@@ -825,12 +896,13 @@ begin
   for Attempt := 1 to Tries do
   begin
     BuildArpRequest(Target);
-    Shared.Busy := 0;
+    Discard;
     SendFrame(60);
 
     T0 := NetTicks;
     Deadline := T0 + PerTry;
     repeat
+      Pump;
       if Shared.Busy <> 0 then
       begin
         L := Shared.PktLen;
@@ -1081,6 +1153,7 @@ begin
         ArpKeepalive;
       end;
     end;
+    Pump;
     if Shared.Busy <> 0 then
     begin
       Inc(NetRxFrames);

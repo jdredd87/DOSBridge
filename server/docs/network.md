@@ -1117,9 +1117,48 @@ restarted flow makes.
 | `dosdeploy` (includes the verify on the box) | 45.6 s | 30.7 s |
 | `dospull` | 57.6 s | **13.8 s** |
 
-Still stop-and-wait, one block in flight.  What is left is the round trip
-itself; a sliding window (RFC 7440 `windowsize`) would attack it, and would
-need `Net`'s single-slot receiver to become a ring first.
+### Windowed downloads: TFTP `windowsize` (2026-09-27, evening)
+
+With the per-byte costs gone, the round trip was what was left, so a read
+now has up to 8 blocks in flight (RFC 7440).  By **StevenC** and **Claude**,
+with StevenC at the machine to restart `dosd`.
+
+* **`Net` receives into a ring** of 8 slots of 2 KB.  The interrupt handler
+  fills slot `RHead` and advances it; the main loop owns `RTail`; `Pump`
+  moves the oldest frame into `Shared.Buf`, where every parser already
+  looked.  Neither side read-modify-writes the other's counter.
+* **UGET asks for `windowsize 8`** on a file fetch (`-W n` to change it,
+  `-W 1` to turn it off); the job poll never asks.  It ACKs the last block
+  of each window, or the last block of the file.  A block it already has
+  gets one re-ACK of the last good block per burst; a gap gets one ACK of
+  the last good block, and the rest of that window is ignored until the
+  server starts again from there.  Silence re-ACKs, as before.
+* **The disk is written only at a window's end**, just before its ACK, while
+  the server waits -- so "nothing on the wire while we are in DOS" still
+  holds.  The write buffer (12 blocks) always has room for a whole window.
+* **`dosd` grants a window only to a client that asks** and otherwise runs
+  the stop-and-wait code untouched.  `tftp_send_blob_windowed`: send the
+  window, wait; an ACK moves the base to just after the block it names
+  (the end of the window, or the last good one before a gap); silence
+  resends the window.  `DOSD_TEST_DROP=0.05` throws away that fraction of
+  windowed DATA packets, for testing recovery on the real link.
+* `projects/dostune/test_window.py` runs dosd's sender against a
+  transcription of the client over loopback: 99 transfers at every size
+  around the block and window boundaries, with 0, 5 and 20% loss both
+  ways -- all exact.  `simulate_dos.py` asks for the window as UGET does,
+  and `selftest.py` passes.
+
+| 512 KB on the V30, byte-exact | window 1 | 2 | 4 | 8 |
+|---|---|---|---|---|
+| to a file | 8.1 s | 7.3 s | 7.0 s | 6.5 s |
+| to `NUL` | 8.1 s | | | **4.3 s** |
+| ACKs sent | 379 | 192 | 98 | 51 |
+
+To a file, the disk (~240 KB/s written through DOS) is now the limit.
+`dosdeploy` of 512 KB: 30.7 s -> 24.1 s (it also verifies on the box).
+**Uploads are still stop-and-wait** (512 KB raw `UPUT` 7.8 s): the same
+change on that side needs UPUT to seek back and resend a window after a
+gap, and `tftp_recv_blob` to ACK per window.
 
 ## The original investigation: large transfers are NOT ARP
 

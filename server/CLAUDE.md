@@ -975,9 +975,12 @@ other compiler/unit state), so shipping it would have swapped the V30's
 proven transport for an unproven one, with nobody at the machine, for a
 change that adds no credit. Those binaries -- CRC `A3B45BDD` and
 `8FA5110E` -- stayed until the transport changed for its own reasons, which
-it did on 2026-09-27 (below): **the transport now is `UGET` `502A18C8` and
-`UPUT` `C944798B`**, proven on the V30 with StevenC at the machine, the old
-pair kept on the box as `C:\TOOLS\UGET.OLD` and `UPUT.OLD`. `NTP.EXE`
+it did on 2026-09-27 (below): first to `UGET` `502A18C8` / `UPUT`
+`C944798B`, then the same evening to **`UGET` `BA664B1B` and `UPUT`
+`490331F7`** -- windowed downloads and a receive ring -- proven on the V30
+with StevenC at the machine.  Earlier pairs are on the box as
+`C:\TOOLS\UGET.OLD`/`UPUT.OLD` (before any of it) and `UGET.PRV`/`UPUT.PRV`
+(before the window). `NTP.EXE`
 rebuilt ~420 bytes smaller the same way and did ship: it is not in the
 transport.
 
@@ -986,9 +989,16 @@ protocol.** `docs/network.md`, "Where the time went", has it: the UDP
 checksum was Pascal calling a procedure per word (52 ms a 1400-byte block,
 now 3 ms in `starter/sumbuf.inc`, proven equal by `sumtest.pas` over 18,180
 cases), payloads were copied a byte at a time, and every block was its own
-disk write or read.  `dospull` of 512 KB: 57.6 s -> 13.8 s.  Still
-stop-and-wait -- the rule below about nothing on the wire while in DOS
-holds, and a sliding window is still undone.
+disk write or read.  `dospull` of 512 KB: 57.6 s -> 13.8 s.  Then
+**downloads went windowed** (TFTP `windowsize`, RFC 7440): UGET asks for 8
+blocks in flight on a file fetch, dosd grants it only to a client that
+asks (the job poll and every older client stay stop-and-wait), and `Net`
+receives into an 8-slot ring.  The disk is still written only between
+windows, while the server waits for the ACK -- the rule below holds.  512 KB
+to `NUL` 8.1 s -> 4.3 s; to a file 6.5-6.8 s (the disk is now the limit);
+`dosdeploy` 45.6 s -> 24.1 s over the day.  Uploads are still
+stop-and-wait.  **Changing the transport now means changing
+`simulate_dos.py` too** -- it asks for the window the way UGET does.
 
 ## Hard constraints — these are not style preferences
 
@@ -1530,7 +1540,8 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 71 is public** (2026-09-27: DOSKEYSC's TAB remembers the next eight
+* **Build 72 is public** (2026-09-27: the transport 4x faster, same protocol --
+  `docs/network.md`, "Where the time went"). **Build 71** (2026-09-27: DOSKEYSC's TAB remembers the next eight
   names, 5x faster cycling). **Build 70** (2026-09-27: DOSKEYSC, a directory completes with no
   trailing `\`, which CD refuses). **Build 69** (2026-09-27: `extras/doskeysc`, DOSKEYSC -- 6.22's
   DOSKEY key for key plus TAB filename completion, in `client\EXTRAS`).

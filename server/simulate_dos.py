@@ -93,13 +93,17 @@ DISK = {}
 OP_RRQ, OP_WRQ, OP_DATA, OP_ACK, OP_ERROR, OP_OACK = 1, 2, 3, 4, 5, 6
 BLK_DEFAULT = 512
 BLK_WANT = 1400          # what UGET/UPUT ask for
+WIN_WANT = 8             # what UGET asks for on a file fetch (windowsize)
 
 
-def _rq(op, name, blk):
-    """A read or write request, with the blksize option when one is wanted."""
+def _rq(op, name, blk, win=0):
+    """A read or write request, with the blksize and windowsize options when
+    they are wanted."""
     pkt = struct.pack("!H", op) + name.encode("cp437") + b"\0octet\0"
     if blk:
         pkt += b"blksize\0" + str(blk).encode() + b"\0"
+    if win > 1:
+        pkt += b"windowsize\0" + str(win).encode() + b"\0"
     return pkt
 
 
@@ -111,7 +115,7 @@ def _opts(data):
             for i in range(0, len(parts) - 1, 2) if parts[i]}
 
 
-def tftp_get(name, blk_want=BLK_WANT, timeout=10, tries=5):
+def tftp_get(name, blk_want=BLK_WANT, timeout=10, tries=5, win_want=WIN_WANT):
     """Fetch `name` from dosd over TFTP. Returns bytes, or None.
 
     Stop-and-wait, like the DOS client: one packet in flight, every block
@@ -122,10 +126,13 @@ def tftp_get(name, blk_want=BLK_WANT, timeout=10, tries=5):
     s = udp()
     s.settimeout(timeout)
     try:
-        req = _rq(OP_RRQ, name, blk_want)
+        req = _rq(OP_RRQ, name, blk_want, win_want if blk_want else 0)
         s.sendto(req, (HOST, TFTP_PORT))
 
         blk = BLK_DEFAULT
+        win = 1                  # blocks per window, once the OACK says
+        inwin = 0                # in-order blocks since our last ACK
+        dup_acked = gap_acked = False
         out = bytearray()
         want = 1
         peer = None
@@ -158,9 +165,12 @@ def tftp_get(name, blk_want=BLK_WANT, timeout=10, tries=5):
                 return None
 
             if op == OP_OACK:
-                got = _opts(data).get("blksize")
-                if got:
-                    blk = int(got)
+                o = _opts(data)
+                if o.get("blksize"):
+                    blk = int(o["blksize"])
+                if o.get("windowsize"):
+                    win = int(o["windowsize"])
+                inwin = 0
                 # RFC 2347: ACK block 0 to start the transfer.
                 s.sendto(struct.pack("!HH", OP_ACK, 0), peer)
                 continue
@@ -170,16 +180,35 @@ def tftp_get(name, blk_want=BLK_WANT, timeout=10, tries=5):
 
             n = struct.unpack("!H", data[2:4])[0]
             payload = data[4:]
-            if n == (want & 0xFFFF):
+            # As TftpGet does it: where is this block relative to the one
+            # we want (block numbers wrap at 65536)?
+            diff = ((n - want + 0x8000) & 0xFFFF) - 0x8000
+            if diff == 0:
+                dup_acked = gap_acked = False
                 out += payload
-                s.sendto(struct.pack("!HH", OP_ACK, n), peer)
+                inwin += 1
+                last = len(payload) < blk
+                # ACK the end of each window, or the last block
+                if last or inwin >= win:
+                    s.sendto(struct.pack("!HH", OP_ACK, n), peer)
+                    inwin = 0
                 want += 1
-                if len(payload) < blk:
+                if last:
                     return bytes(out)
-            elif n == ((want - 1) & 0xFFFF):
-                # A duplicate. Re-ACK it and do NOT write it again -- that is
-                # the classic way a stop-and-wait transfer corrupts silently.
-                s.sendto(struct.pack("!HH", OP_ACK, n), peer)
+            elif diff < 0:
+                # A block we already have. Re-ACK the last we took and do NOT
+                # write it again -- that is the classic way a stop-and-wait
+                # transfer corrupts silently. Once per burst when windowed.
+                if win <= 1 or not dup_acked:
+                    s.sendto(struct.pack("!HH", OP_ACK, (want - 1) & 0xFFFF),
+                             peer)
+                    dup_acked = True
+                    inwin = 0
+            elif win > 1 and not gap_acked:
+                # A block went missing inside the window: say where we are.
+                s.sendto(struct.pack("!HH", OP_ACK, (want - 1) & 0xFFFF), peer)
+                gap_acked = True
+                inwin = 0
     finally:
         s.close()
 

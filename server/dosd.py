@@ -39,6 +39,7 @@ import json
 import os
 import re
 import queue
+import random
 import socket
 import socketserver
 import struct
@@ -1776,7 +1777,74 @@ def flow_end(ip, name, ev):
                 _flows.pop(key, None)
 
 
-def tftp_send_blob(sock, addr, blob, retries=None, blk=None, cancel=None):
+# windowsize (RFC 7440): how many DATA blocks may be in flight before the
+# client's ACK.  Only a client that asks gets more than one -- UGET with -W
+# -- so the job poll and every older client stay exactly stop-and-wait.
+# Eight blocks is what the client's write buffer and receive ring hold.
+TFTP_WIN_MAX = 8
+
+# Testing only: throw away this fraction of the DATA packets of windowed
+# transfers, so their recovery runs on the real link.  Never set in use.
+TEST_DROP = float(os.environ.get("DOSD_TEST_DROP", "0") or 0)
+
+
+def tftp_send_blob_windowed(sock, addr, blob, retries, blk, window, cancel=None):
+    """A TFTP read with `window` blocks in flight (RFC 7440).
+
+    Send a window, then wait for an ACK.  The client ACKs the last block of
+    each window -- and writes to its disk only then, while we wait, so
+    nothing is on the wire while it is in DOS.  An ACK for an earlier block
+    means one went missing (or our window was a repeat): start the next
+    window just after it, at once.  Silence resends the window; `retries`
+    silences in a row end the transfer.
+
+    Returns (ok, blocks_acked), as tftp_send_blob does.
+    """
+    nblocks = len(blob) // blk + 1        # a short last block, maybe empty
+    base = 1                              # the first block not yet ACKed
+    tries = 0
+    rnd = random.Random()
+    while base <= nblocks:
+        if cancel is not None and cancel.is_set():
+            return False, base - 1
+        end = min(base + window - 1, nblocks)
+        for b in range(base, end + 1):
+            if TEST_DROP and rnd.random() < TEST_DROP:
+                continue
+            off = (b - 1) * blk
+            sock.sendto(struct.pack("!HH", OP_DATA, b & 0xFFFF)
+                        + blob[off:off + blk], addr)
+        moved = False
+        try:
+            while True:
+                data, src = sock.recvfrom(1024)
+                if src != addr or len(data) < 4:
+                    continue
+                op, a = struct.unpack("!HH", data[:4])
+                if op == OP_ERROR:
+                    return False, base - 1
+                if op != OP_ACK:
+                    continue
+                # 16-bit block numbers: place the ACK in base-1 .. end
+                d = (a - (base - 1)) & 0xFFFF
+                if d > end - (base - 1):
+                    continue                  # from an older exchange
+                moved = d > 0
+                base = base + d               # the block after the ACKed one
+                break
+        except socket.timeout:
+            pass
+        if moved:
+            tries = 0
+        else:
+            tries += 1
+            if tries >= retries:
+                return False, base - 1
+    return True, nblocks
+
+
+def tftp_send_blob(sock, addr, blob, retries=None, blk=None, cancel=None,
+                   window=1):
     """Serve a blob as a TFTP read.
 
     Returns (ok, blocks_acked). The count matters for the job resource: a
@@ -1798,6 +1866,9 @@ def tftp_send_blob(sock, addr, blob, retries=None, blk=None, cancel=None):
         retries = TFTP_RETRIES
     if blk is None:
         blk = TFTP_BLK
+    if window > 1:
+        return tftp_send_blob_windowed(sock, addr, blob, retries, blk, window,
+                                       cancel=cancel)
     block, off = 1, 0
     acked_count = 0
     while True:
@@ -2210,6 +2281,12 @@ def tftp_serve(req, addr):
                 except ValueError:
                     want = TFTP_BLK
                 blk = max(8, min(want, TFTP_BLK_MAX))
+            win = 1
+            if "windowsize" in opts:
+                try:
+                    win = max(1, min(int(opts["windowsize"]), TFTP_WIN_MAX))
+                except ValueError:
+                    win = 1
             if resume_at:
                 if resume_at > len(blob):
                     # The client believes it has more of this file than
@@ -2229,8 +2306,13 @@ def tftp_serve(req, addr):
             # missing name cannot cancel a transfer that is going fine.
             cancel = flow_begin(addr[0], name)
             try:
+                agreed = []
                 if blk != TFTP_BLK:
-                    if not tftp_send_oack(sock, addr, [("blksize", blk)],
+                    agreed.append(("blksize", blk))
+                if win > 1:
+                    agreed.append(("windowsize", win))
+                if agreed:
+                    if not tftp_send_oack(sock, addr, agreed,
                                           FILE_SEND_RETRIES, cancel=cancel):
                         if cancel.is_set():
                             log("tftp: %s superseded before blksize %d was "
@@ -2241,15 +2323,17 @@ def tftp_serve(req, addr):
                         return
                 ok, _ = tftp_send_blob(sock, addr, blob,
                                        retries=FILE_SEND_RETRIES, blk=blk,
-                                       cancel=cancel)
+                                       cancel=cancel, window=win)
             finally:
                 flow_end(addr[0], name, cancel)
             if cancel.is_set() and not ok:
                 log("tftp: send of %s to %s stopped -- superseded by a newer "
                     "request" % (name, addr[0]))
             else:
-                log("tftp: sent %s (%d bytes, blk %d) to %s%s"
-                    % (name, len(blob), blk, addr[0], "" if ok else "  FAILED"))
+                log("tftp: sent %s (%d bytes, blk %d%s) to %s%s"
+                    % (name, len(blob), blk,
+                       (", window %d" % win) if win > 1 else "",
+                       addr[0], "" if ok else "  FAILED"))
 
         elif op == OP_WRQ:
             # "name@12345" resumes a write that stalled, the mirror of the

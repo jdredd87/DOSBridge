@@ -103,6 +103,13 @@ var
     trip on every poll. }
   TftpWantBlk : Word;
   TftpBlkSize : Word;          { what was actually agreed, 512 if no OACK }
+  { windowsize (RFC 7440), for a get: how many blocks the server may send
+    before waiting for an ACK.  0 or 1 asks for nothing -- stop-and-wait,
+    exactly as before.  Agreed value in TftpWin; TftpGaps counts the times
+    a block went missing inside a window. }
+  TftpWantWin : Word;
+  TftpWin     : Word;
+  TftpGaps    : LongInt;
   TftpPeerTID : Word;
 
 { FirstWait is separate from the per-block timeout because the job poll is a
@@ -217,6 +224,40 @@ end;
 { Pull blksize out of an OACK. Anything we asked for that is not echoed
   keeps its default, which is what RFC 2347 requires and what lets this talk
   to a server that only understands some of the options. }
+{ The value the server gave option Name in its OACK, if it is within Lo..Hi;
+  else Default.  OackBlkSize is the same thing for one option. }
+function OackOpt(Len: Word; const Name: ShortString; Lo, Hi, Default: Word): Word;
+var
+  I    : Word;
+  S    : ShortString;
+  V    : LongInt;
+  Code : Integer;
+  Want : Boolean;
+begin
+  OackOpt := Default;
+  Want := False;
+  I := 2;
+  while I < Len do
+  begin
+    S := '';
+    while (I < Len) and (RxP[I] <> 0) do
+    begin
+      if Length(S) < 40 then S := S + UpCase(Chr(RxP[I]));
+      Inc(I);
+    end;
+    Inc(I);
+    if Want then
+    begin
+      Val(S, V, Code);
+      if (Code = 0) and (V >= Lo) and (V <= Hi) then
+        OackOpt := Word(V);
+      Want := False;
+    end
+    else if S = Name then
+      Want := True;
+  end;
+end;
+
 function OackBlkSize(Len: Word): Word;
 var
   I    : Word;
@@ -288,6 +329,13 @@ begin
     Opt := 'blksize';
     PutZ(Opt);
     Opt := Num(TftpWantBlk);
+    PutZ(Opt);
+  end;
+  if TftpWantWin > 1 then
+  begin
+    Opt := 'windowsize';
+    PutZ(Opt);
+    Opt := Num(TftpWantWin);
     PutZ(Opt);
   end;
   BuildRQ := N;
@@ -379,6 +427,10 @@ var
   MaxRq    : Integer;
   Done     : Boolean;
   Peer     : TIP;
+  InWin    : Word;             { in-order blocks since our last ACK }
+  Diff     : SmallInt;         { where a block is relative to Expect }
+  Last     : Boolean;
+  DupAcked, GapAcked : Boolean;
 begin
   TftpGet := False;
   TftpErr := '';
@@ -387,6 +439,8 @@ begin
   FOpen := False;
   Done := False;
   WLen := 0;
+  TftpWin := 1; InWin := 0; TftpGaps := 0;
+  DupAcked := False; GapAcked := False;
 
   PickPort;
   RQLen := BuildRQ(OP_RRQ, Remote);
@@ -517,6 +571,8 @@ begin
           { The new flow negotiates from scratch, so do not assume the size
             the old one agreed to. }
           TftpBlkSize := TFTP_BLK;
+          TftpWin := 1; InWin := 0;
+          DupAcked := False; GapAcked := False;
           RQLen := BuildRQ(OP_RRQ, Remote + '@' + Num(TftpBytes));
           if not NetUdpSend(MyPort, SrvPort, Pkt, RQLen) then
           begin
@@ -535,6 +591,8 @@ begin
         PutW(Pkt, 2, Expect - 1);
         NetUdpSend(MyPort, TftpPeerTID, Pkt, 4);
         Wait := TIMEOUT_TICKS;
+        InWin := 0;             { the server starts its window again at Expect }
+        DupAcked := False; GapAcked := False;
       end;
       Continue;
     end;
@@ -601,6 +659,10 @@ begin
         tells it to start sending. }
       if TftpPeerTID = 0 then TftpPeerTID := NetFromPort;
       TftpBlkSize := OackBlkSize(Got);
+      { At most as many blocks as the write buffer holds: the disk is only
+        written between windows, while the server waits for our ACK. }
+      TftpWin := OackOpt(Got, 'WINDOWSIZE', 1, WBUF_SIZE div TFTP_BLK_MAX, 1);
+      InWin := 0;
       PutW(Pkt, 0, OP_ACK);
       PutW(Pkt, 2, 0);
       NetUdpSend(MyPort, TftpPeerTID, Pkt, 4);
@@ -622,11 +684,16 @@ begin
 
     Blk     := GetW(RxP, 2);
     DataLen := Got - 4;
+    Diff    := SmallInt(Blk - Expect);    { block numbers wrap at 65536 }
 
-    if Blk = Expect then
+    if Diff = 0 then
     begin
+      DupAcked := False; GapAcked := False;
       if DataLen > 0 then
       begin
+        { With a window of one the server is waiting, so writing here is
+          safe.  With a bigger one this never fires: the buffer is emptied
+          at each window's end so that a whole window fits. }
         if WLen + DataLen > WBUF_SIZE then
           if not FlushW(F) then
           begin
@@ -638,22 +705,30 @@ begin
         TftpBytes := TftpBytes + DataLen;
       end;
       Inc(TftpBlocks);
-      { The last block: everything to the disk before it is ACKed, so a
-        "done" the server hears means the file is complete. }
-      if DataLen < TftpBlkSize then
-        if not FlushW(F) then
-        begin
-          TftpErr := 'write failed at block ' + Num(Blk) + ' (disk full?)';
-          Break;
-        end;
-
-      PutW(Pkt, 0, OP_ACK);
-      PutW(Pkt, 2, Blk);
-      NetUdpSend(MyPort, TftpPeerTID, Pkt, 4);
-
+      Inc(InWin);
       { A short block is the end of the transfer, by definition. A file that
         is an exact multiple of the block size ends with a zero-length one. }
-      if DataLen < TftpBlkSize then
+      Last := DataLen < TftpBlkSize;
+
+      if Last or (InWin >= TftpWin) then
+      begin
+        { The end of a window (or of the file): the server now waits for this
+          ACK, so this is the moment to write -- everything at the end, so a
+          "done" the server hears means the file is complete; otherwise
+          enough to make room for the next window. }
+        if Last or (WLen + LongInt(TftpWin) * TftpBlkSize > WBUF_SIZE) then
+          if not FlushW(F) then
+          begin
+            TftpErr := 'write failed at block ' + Num(Blk) + ' (disk full?)';
+            Break;
+          end;
+        PutW(Pkt, 0, OP_ACK);
+        PutW(Pkt, 2, Blk);
+        NetUdpSend(MyPort, TftpPeerTID, Pkt, 4);
+        InWin := 0;
+      end;
+
+      if Last then
       begin
         Done := True;
         TftpGet := True;
@@ -662,15 +737,37 @@ begin
       Tries := 0;
       Wait := TIMEOUT_TICKS;
     end
-    else if Blk = (Expect - 1) then
+    else if Diff < 0 then
     begin
-      { The server did not hear our ACK and sent the block again. Re-ACK it
-        WITHOUT writing, or the file gains a duplicate 512 bytes -- the
-        classic way a stop-and-wait transfer corrupts silently. }
+      { A block we already have: the server did not hear our ACK and sent it
+        again. Re-ACK the last one we have WITHOUT writing, or the file gains
+        a duplicate -- the classic way a stop-and-wait transfer corrupts
+        silently.  Once per burst when windowed: a whole resent window would
+        otherwise draw an ACK for every block, each one restarting it. }
       Inc(TftpDups);
-      PutW(Pkt, 0, OP_ACK);
-      PutW(Pkt, 2, Blk);
-      NetUdpSend(MyPort, TftpPeerTID, Pkt, 4);
+      if (TftpWin <= 1) or not DupAcked then
+      begin
+        PutW(Pkt, 0, OP_ACK);
+        PutW(Pkt, 2, Expect - 1);
+        NetUdpSend(MyPort, TftpPeerTID, Pkt, 4);
+        DupAcked := True;
+        InWin := 0;
+      end;
+    end
+    else if TftpWin > 1 then
+    begin
+      { A block went missing inside the window: ACK the last one we have,
+        once, and the server starts again from the one after it.  The rest
+        of this window, still arriving, is ignored until it does. }
+      if not GapAcked then
+      begin
+        Inc(TftpGaps);
+        PutW(Pkt, 0, OP_ACK);
+        PutW(Pkt, 2, Expect - 1);
+        NetUdpSend(MyPort, TftpPeerTID, Pkt, 4);
+        GapAcked := True;
+        InWin := 0;
+      end;
     end;
     { Anything else is a stray from an older exchange: ignore it. }
   end;

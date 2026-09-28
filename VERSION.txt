@@ -1,4 +1,4 @@
 DOS Bridge installer
-build 72
+build 73
 built 2026-09-27
 source C:\dosbridgeDEV

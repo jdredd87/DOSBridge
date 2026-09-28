@@ -54,6 +54,8 @@ var
   Ok     : Boolean;
   Verbose: Boolean;
   NoSpin : Boolean;
+  WantW  : LongInt;
+  Code   : Integer;
 
 { A heartbeat for the agent loop.
 
@@ -162,6 +164,15 @@ begin
     if A = 'POLL' then Poll := True;
     if (A = '-V') or (A = '/V') then Verbose := True;
     if A = '-NOSPIN' then NoSpin := True;
+    { -W n: ask for a window of n blocks (TFTP windowsize).  A server that
+      does not know the option ignores it, and the transfer is
+      stop-and-wait as before. }
+    if (A = '-W') or (A = '/W') then
+      if I < ParamCount then
+      begin
+        Val(ParamStr(I + 1), WantW, Code);
+        if Code <> 0 then WantW := 0;
+      end;
   end;
 
   if not NetReadConfig then
@@ -191,6 +202,11 @@ begin
     a block or two, and an extra round trip on every poll would cost more
     than it saves. }
   if Poll then TftpWantBlk := 0 else TftpWantBlk := TFTP_BLK_MAX;
+  { Eight blocks in flight on a real fetch (measured on the V30,
+    2026-09-27: 512 KB to NUL in 4.3 s against 8.1 stop-and-wait); -W n
+    changes it, -W 1 turns it off.  The job poll never windows. }
+  if WantW = 0 then WantW := 8;
+  if Poll then TftpWantWin := 0 else TftpWantWin := WantW;
   if Poll then Wait := 73 else Wait := 36;
   if Poll and (not NoSpin) then NetIdleHook := @Heartbeat;
 
@@ -229,7 +245,7 @@ begin
   begin
     WriteLn(' uget: ', Fit(Leaf(Local), 16), '  ', TftpBytes, ' bytes, ',
             TftpBlocks, ' blocks of ', TftpBlkSize, ', ', TftpResends,
-            ' resends');
+            ' resends, window ', TftpWin, ', ', TftpGaps, ' gaps');
     WriteLn('       rx ', NetRxFrames, ' (', NetRxWrong, ' foreign, ',
             NetRxDrop, ' dropped)  tx ', NetTxFrames, ' (', NetTxFail,
             ' refused, ', NetArpSent, ' arp, ', NetArpReplied, ' answered)');
