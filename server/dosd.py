@@ -826,10 +826,14 @@ def build_driver_batch(job_id, drv_name, drv_args, cold, device=None):
     the crash guard only ever proves the machine survived.
     """
     drv = leaf_of(drv_name)
+    # Not DEVLOAD /V: on the V30 (DEVLOAD 3.25, 2026-09-28) /V hangs the
+    # machine before DEVLOAD prints even its banner, with any driver -- a
+    # 66-byte one that touches nothing included -- and every dosdrv run
+    # there wedged.  Without it the same drivers load.
     pend = [
         "@ECHO OFF",
         "IF EXIST C:\\AGENT\\DRVOUT.TXT DEL C:\\AGENT\\DRVOUT.TXT",
-        "DEVLOAD /V C:\\WORK\\%s %s > C:\\AGENT\\DRVOUT.TXT" % (drv, drv_args),
+        "DEVLOAD C:\\WORK\\%s %s > C:\\AGENT\\DRVOUT.TXT" % (drv, drv_args),
     ]
     if device:
         d = device.upper()

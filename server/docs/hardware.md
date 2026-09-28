@@ -354,6 +354,55 @@ for that reason.  **Both others were measured since** (`projects/dostune`):
 So the rule is not "load everything low": it pays where the driver's own
 code is the bottleneck, and nowhere else.
 
+## The PicoMEM's EMS, measured for an XMS driver
+
+**2026-09-28, the V30 with the PicoMEM 2 (`PMINFO`: BIOS 2026-06-16, board
+id 11).**  Measured while building `extras/xmssc`, an XMS driver that
+drives the card's EMS page registers itself; the probes are in its
+`test\`, and its README has the rest.
+
+* **The four EMS page registers read back** (port from `INT 13h AX=6001h`:
+  2A8h here, the frame at E000h), and an `OUT` of a number read back maps
+  that page.  An `OUT` costs ~4 us.
+* **Changing a page register is free**: 512 bytes read straight after a
+  change cost the same 716 us as with none, and cycling 1 to 16 different
+  pages through one window changed nothing.  No page cache to thrash.
+* **Copy ceilings** (`REP MOVSW`): 712 KB/s between conventional memory
+  and the frame, 1,780 in conventional memory, **~445 between two frame
+  windows**.  A word misaligned in conventional memory costs 16%; on the
+  card, nothing.
+* **The 8087 does not help a copy**: `FILD`/`FISTP` qwords, 405 KB/s in
+  conventional memory and 307 to the card, 4.4 and 2.3 times slower than
+  `REP MOVSW`.
+* **`INT 13h AX=6000h/6001h` returns with interrupts OFF** -- the PicoMEM
+  BIOS hands back its own flags.  A program that calls it and then waits
+  on the BIOS clock hangs; this hung the V30 twice.  Wrap it in
+  `PUSHF`/`POPF`.
+
+## Interrupts off for more than ~27 ms loses clock ticks
+
+**Found 2026-09-28, and it makes benchmarks lie.**  On the V30, code that
+holds interrupts off for longer than about half a timer tick (~27 ms)
+loses BIOS ticks -- not only past a whole tick (55 ms), where any PC would.
+A benchmark timed by the BIOS clock then reads *fast*.
+
+It showed up as PicoMEM frame-to-frame copies apparently running 32%
+faster with interrupts off.  Timed by PIT channel 0 instead, with every
+IRQ masked at the PIC for three seconds, they ran at exactly the speed they
+ran with interrupts on (444 KB/s).  By copy size, timed by the tick: 1, 4
+and 8 KB copies under `CLI` (up to 18 ms) no faster; only 16 KB (~35 ms)
+"gained".  `PMEMMSC`'s 57h held interrupts off for a whole move, so its
+long moves lost ticks too, and EMSTEST's EMS-to-EMS and exchange rows read
+fast (640 and 576 KB/s; really 416 and 160).  **Fixed the same day in
+PMEMMSC r01-SC2** -- 4 KB pieces with interrupts let in between
+(`C:\CH375USB\PicoMEM\emm\README.md`).
+
+So: keep interrupts-off stretches well under 27 ms, and time anything that
+holds them off longer with the PIT, not the tick.  **And bound every wait
+on hardware**: an unbounded wait for the CMOS clock's seconds -- which
+never changed at ports 70h/71h on this machine -- hung the box the same
+afternoon.
+
 ## The CMOS battery is dead, and it breaks power-cycle recovery
 
 **Found 2026-09-03.** The box's clock reads `01-01-80 12:08a` a few minutes

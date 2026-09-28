@@ -50,6 +50,17 @@ file says about the 386SX is history, kept because what it found still
 applies to code written here: the INT 10h hook, the 256-byte environment,
 and "run on both -- gate at run time" for any 386 someone else has.
 
+**2026-09-28: a 486DX/33 is on the bridge, with the PicoMEM 1 and the
+retired 386SX's SD card -- so it polls from .67 as `sx386`**, and
+`boxes.json` registers it under that id (its own smart plug, set there;
+no capture stick).  StevenC offered it for testing; its tools are a few days behind
+the V30's.  `FPU` reads "80386 or later" with a coprocessor; `MEM`: 3 MB of
+extended memory, no EMS, no UMBs.  **Its PicoMEM 1 has EMS off** in the
+card's own configuration (`PMCFG`), which is a setting on its boot disk,
+so it was left alone.  `LASTDRIVE=G` was added to its `CONFIG.SYS` for
+`DEVLOAD` (original: `C:\CONFIG.X0`; `projects\dostune\cfg486.py`).
+Commands need `--box sx386`: the V30 stays the default.
+
 Its last day, for the record: with the PicoMEM 1 it ran `PM2000` SC5
 CRC-exact, at the original's speed. With the **PicoMEM 2** it never got a
 packet out -- not on the original driver, not on SC2 -- although the card
@@ -342,8 +353,13 @@ before it are `C:\CONFIG.TU0` and `C:\AUTOEXEC.TU0`.
 
 **On 2026-09-28 PMEMMSC went low too** (`tune.py` variant `final4`): EMS
 mapping 2.5x faster and every per-call EMS function 2.2-2.6x, same
-behaviour transcript, for 6,992 bytes -- **569,088 free** now.  The
-09-27 files, with it high, are `C:\CONFIG.TU1` and `C:\AUTOEXEC.TU1`:
+behaviour transcript, for 6,992 bytes -- **569,088 free** then.  The
+09-27 files, with it high, are `C:\CONFIG.TU1` and `C:\AUTOEXEC.TU1`.
+
+**The same evening XMSSC went in** (variant `xms2`, at StevenC's
+instruction): XMS served out of EMS, `extras/xmssc`, 3,680 bytes low, and
+`LASTDRIVE=G` so that `DEVLOAD` loads drivers again (above) -- **565,312
+free**.  `python tune.py apply final4` takes both out again:
 
 ```
 DOS=UMB                                          CONFIG.SYS
@@ -352,6 +368,8 @@ BUFFERS=30
 device=c:\drivers\umbsc.sys C800-D000 D800-E000
 device=c:\drivers\pmemmsc.sys /n
 device=c:\drivers\ansisc.sys
+device=c:\drivers\xmssc.sys
+LASTDRIVE=G
 
 LH C:\DOS\DOSKEYSC.COM                           AUTOEXEC.BAT (the rest
 LH C:\DOS\FASTOPEN.EXE C:=50                      as before)
@@ -406,7 +424,11 @@ page mapping 45-57% faster, and five EMS bugs fixed.  `UMBSC` lives HERE,
 PicoMEM-specific); `PMEMMSC` is PicoMEM-only and stays in
 `C:\CH375USB\PicoMEM\emm`.  Their READMEs have the measurements.  PMEMMSC
 is loaded LOW since 2026-09-28, for the same reason as ANSISC and with a
-bigger payoff (`projects/dostune`, "PMEMMSC low"). `BUFFERS=20` (from 40) gave
+bigger payoff (`projects/dostune`, "PMEMMSC low").  **The V30 runs
+PMEMMSC r01-SC2 since the evening of 2026-09-28** (CRC `BAC75327`; SC1 is
+`C:\DRIVERS\PMEMMSC.S1`): its 57h lets interrupts in every 4 KB instead
+of holding them off for a whole move, and a window nobody mapped stays
+disabled through a saved and restored page map. `BUFFERS=20` (from 40) gave
 back another 10,640 bytes -- 532 a buffer; nothing in the bridge needs
 more, and `FILES=30` is the setting jobs depend on. With both, free
 conventional memory went from 575,472 to **586,336**. **Build a CONFIG.SYS in a
@@ -1161,6 +1183,24 @@ needs a boot floppy and physical hands. `dosdrv` therefore stages drivers into
 network is already up, behind a `TRYING.FLG` guard. If you are ever tempted to
 edit `CONFIG.SYS` to make something work, stop and raise it instead.
 
+**`DEVLOAD` needs a free drive letter even for a character driver.**  On
+2026-09-28, with DOS's default `LASTDRIVE` and six drive units, it refused
+every driver before calling it -- "free drive letter not found, increase
+LASTDRIVE" (a debug build proved the driver's init never ran) -- and hung
+the box once with `/V`.  So `dosdrv`, which loads through it, could not
+have worked either.  **`LASTDRIVE=G` is in the V30's `CONFIG.SYS` since
+that evening** (96 bytes), and `DEVLOAD` calls drivers again -- **without
+`/V`, which hangs the box on its own** (below).
+
+**Interrupts off for more than ~27 ms loses BIOS clock ticks on the V30** --
+half a tick, not the whole one any PC would lose -- and a benchmark timed by
+the tick then reads *fast*.  On 2026-09-28 it conjured a 32% speed-up out of
+nothing (`docs/hardware.md`).  Keep interrupts-off stretches well under
+that, and time anything that holds them off longer by the PIT.  **And bound
+every wait on hardware**: waiting for a register that never changes -- the
+CMOS seconds at 70h/71h, the same afternoon -- is a hung box and a power
+cycle.
+
 **A program that runs for more than a few seconds must prove it is alive,
 and the proof has to be driven by the CLOCK.** A silent program and a
 hard-locked machine are indistinguishable from here, and everything in this
@@ -1261,10 +1301,18 @@ number for a block device, so its errorlevel alone cannot be trusted. Always
 confirm with `MEM /C` and `IF EXIST <DEVICENAME>`, or use `dosdrv --device
 NAME`, which turns the miss into a non-zero exit.
 
-**`drvtest/TESTDEV.SYS` hangs the machine.** It is not the safe known-good
-driver its README claimed: run directly under `DEVLOAD /V` it wedged the box
-and needed a physical reset. `drvtest/HANG.SYS` wedges it on purpose and has
-never been exercised -- only run either with somebody at the machine.
+**`drvtest/TESTDEV.SYS` hangs the machine** -- or so it was recorded: run
+directly under `DEVLOAD /V` it wedged the box and needed a physical reset.
+**But `DEVLOAD /V` hangs the V30 by itself** (2026-09-28): with a 66-byte
+driver that calls nothing (`drvtest/NULLDRV.SYS`) it wedged before printing
+its own banner, and without `/V` the same driver loaded.  So that wedge may
+never have been TESTDEV's; its silent failure to install under `dosdrv`
+stands, and it has not been retried.  **`dosdrv` no longer passes `/V`**
+(`dosd.py`, same day) -- every `dosdrv` run had been wedging the V30 -- and
+is proven again end to end with `NULLDRV.SYS --device SCNULL$$`.  Use
+`NULLDRV.SYS` as the known-good driver.  `drvtest/HANG.SYS` wedges the
+machine on purpose and has never been exercised -- only run it with
+somebody at the machine.
 
 ## Reserved exit codes
 
@@ -1455,7 +1503,8 @@ extras/           optional DOS enhancements that SHIP with the kit but that
                   nothing installs (INSTALL.BAT never edits CONFIG.SYS):
                   ansisc/ is the fast ANSI.SYS, umbsc/ the UMB manager
                   that uses no low memory, doskeysc/ a DOSKEY with TAB
-                  filename completion.  Each extra has its source,
+                  filename completion, xmssc/ XMS 3.0 served out of EMS
+                  (PicoMEM-direct on this box).  Each extra has its source,
                   a released bin/ and a DOS-readable .TXT; the server half
                   carries the folder, the client half gets EXTRAS\NAME\ with
                   bin/ + .TXT.  Nothing is rebuilt at kit time -- update bin/
@@ -1565,7 +1614,12 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 76 is public** (2026-09-28: DOSKEYSC 1.1, its help and messages
+* **Build 77 is public** (2026-09-28 evening: `extras/xmssc`, XMS 3.0
+  served out of EMS, PicoMEM-direct -- 22% faster small moves than the EMS
+  driver's own 57h, loaded from the V30's `CONFIG.SYS`; `dosdrv` fixed --
+  no more `DEVLOAD /V`, which hangs the V30 by itself -- and
+  `drvtest/NULLDRV.SYS`, a driver that is safe to load).
+  **Build 76** (2026-09-28: DOSKEYSC 1.1, its help and messages
   in its own words; the notes on PMEMMSC loaded low).
   **Build 75** (2026-09-28: faster deploys -- REN into place,
   `UGET -C` checks the CRC as it arrives).

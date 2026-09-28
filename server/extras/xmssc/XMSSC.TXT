@@ -1,0 +1,68 @@
+XMSSC -- XMS on expanded memory           a DOS Bridge extra (optional)
+StevenC & Claude, 2026.  Public domain (the Unlicense).
+
+WHAT IT IS
+  An XMS 3.0 driver for PCs with no memory above 1 MB -- an 8088, 8086,
+  V20, V30 -- that have expanded memory: an EMS board, or a PicoMEM.
+  Software that uses XMS when it is there (for buffers, caches, swapping,
+  RAM disks) finds it, and gets the EMS memory through it. PKZIP 2.04g on
+  a V30, for one: "XMS version 3.00 detected".
+
+  On a PicoMEM it drives the card's EMS page registers itself instead of
+  calling the EMS driver: on a V30, 512-byte moves run 22% faster than
+  the EMS driver's own move call, 57% faster than through EMS calls.
+  Anywhere else it works through any EMS 3.2 or later driver.
+
+  Written from the XMS and EMS specifications; it contains no other
+  driver's code.
+
+NOTHING INSTALLS IT FOR YOU
+  It needs the EMS driver loaded first. Either, in CONFIG.SYS, after the
+  EMS driver (have a boot disk handy, as for any CONFIG.SYS change):
+
+    DEVICE=C:\DRIVERS\XMSSC.SYS
+
+  or as a program, from AUTOEXEC.BAT or a prompt -- and out again:
+
+    XMSSC
+    XMSSC /U        (only if no program still has a block allocated)
+
+  3,696 bytes resident. Load it LOW (not DEVICEHIGH/LH) on a PicoMEM: its
+  upper memory runs code about 2.4 times slower, and a move is mostly the
+  driver's code.
+
+SWITCHES
+  /V:2   report XMS 2.00 instead of 3.00, for a program that minds
+  /H:n   n handles, 1-128 (default 32)
+  /I:n   PicoMEM: let interrupts in every n KB of a move, 1-8 (default 4).
+         1 is kinder to a serial port at high speed, and 4.5% slower
+  /G     use EMS calls even on a PicoMEM
+  /Q     say nothing when loading
+  /C:n   treat the CPU as 0 8086, 1 186/V30, 2 286, 3 386 (for testing)
+
+WHAT IT ANSWERS
+  All of XMS 2.0, and 3.0's 32-bit calls on a 386 or later. There is no
+  HMA on an 8086 (90h), no A20 line (reported as it is), and a block
+  cannot be locked (ADh): it has no address a program could use. Upper
+  memory blocks (UMBs) are passed on to the XMS driver loaded before it
+  if it hands them out -- UMBSC does -- so the two work together.
+
+  Each block is an EMS handle, so blocks share the EMS driver's handles
+  with every EMS program.
+
+MEASURED (NEC V30, PicoMEM 2, moves a second)
+                          XMSSC     XMSSC /G   EMS 57h
+    512 bytes               977        625        804
+    1 KB                    582        437        513
+    4 KB                    169        154        163
+    16 KB              704 KB/s   688 KB/s   704 KB/s   (the card's limit)
+
+TESTED
+  In an emulator against the real PMEMMSC driver and against EMS 3.2 and
+  4.0 drivers that scatter their pages: every function, every error, and
+  1,500 random operations each, 0 failures. On a V30 with a PicoMEM 2,
+  from CONFIG.SYS and as the TSR, with XMSTEST: 0 failures; and PKZIP
+  2.04g used it and made a good archive.
+
+  README.md in DOS Bridge's extras\xmssc has the design, every
+  measurement and the tests.

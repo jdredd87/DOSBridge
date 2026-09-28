@@ -1003,9 +1003,10 @@ The agent on the box was updated on 2026-08-29 to close the quiet-failure gap:
   with `ECHO`. COMMAND.COM cannot escape a `>` inside an `ECHO`, so the old
   ECHO-built `PEND.BAT` could never contain a redirection — which is what was
   needed to capture DEVLOAD's output at all.
-- It runs `DEVLOAD /V` and captures everything to `C:\AGENT\DRVOUT.TXT`, which
+- It runs `DEVLOAD` and captures everything to `C:\AGENT\DRVOUT.TXT`, which
   `:TRYIT` now folds into the report. Previously that output went to a screen
-  nobody was watching.
+  nobody was watching.  (It ran `DEVLOAD /V` until 2026-09-28, when `/V` was
+  found to hang the V30 by itself -- see below.)
 - With `--device NAME`, `PEND.BAT` also emits `##DEVICE` or `##DEVFAIL`, and
   `dosctl` turns `##DEVFAIL` into a non-zero exit.
 
@@ -1029,6 +1030,20 @@ a physical reset. Do not use it as a known-good driver. See `drvtest/README.md`.
 This is the quiet-failure gap above, observed for real: `##BOOTOK` means "the
 machine survived", not "the driver loaded". Always check `MEM /C` and
 `IF EXIST <DEVICENAME>`.
+
+**2026-09-28: `DEVLOAD /V` hangs the V30 on its own, and `DEVLOAD` needs a
+free drive letter.**  Found while loading `extras/xmssc`.  With DOS's default
+`LASTDRIVE` and six drive units, `DEVLOAD` refused every driver before
+calling it ("free drive letter not found, increase LASTDRIVE") -- a debug
+build of the driver proved its init never ran.  `LASTDRIVE=G` went into the
+V30's `CONFIG.SYS`.  Then `DEVLOAD /V`, which `PEND.BAT` used, wedged the
+machine before printing its own banner, with `drvtest/NULLDRV.SYS` -- 66
+bytes whose init calls nothing -- while plain `DEVLOAD` loaded the same file
+and it registered.  Every `dosdrv` had been wedging the V30 for that reason,
+and TESTDEV's direct-run wedge above was under `/V` too, so it may not have
+been TESTDEV's.  `PEND.BAT` no longer passes `/V`; `dosdrv
+drvtest/NULLDRV.SYS --device SCNULL$$` then went through end to end:
+`##BOOTOK`, "Driver loaded", `##DEVICE SCNULL$$ registered`, exit 0.
 
 `dosctl reboot` is verified: a warm reboot took the box down and back in 28
 seconds, the drop-then-return detection worked, and the job loop was healthy
