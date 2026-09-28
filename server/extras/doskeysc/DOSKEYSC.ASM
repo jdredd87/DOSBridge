@@ -2370,36 +2370,39 @@ o_ovr   db      '/OVERSTRIKE', 0
 o_notab db      '/NOTAB', 0
 o_tab   db      '/TAB', 0
 
-m_incomp db     7, 'An incompatible DOSKey is already installed.$'
-m_nobuf db      7, 'Cannot change BUFSIZE.$'
-m_inval db      'Invalid macro definition.$'
-m_nomem db      7, 'Insufficient memory to store macro. Use the DOSKEY command with the /BUFSIZE', 13, 10
-        db      'switch to increase available memory.$'
-m_dosv  db      7, 'Incorrect DOS version$'
+; Every message and the /? text are our own words (2026-09-28).  Each
+; message keeps the line count and the bell of the 6.22 one it stands in
+; for, so the emulator comparisons can pair them up (test\emudoskey.py,
+; MSGS) and still prove the same message comes out at the same moment.
+m_incomp db     7, 'A DOSKEY that DOSKEYSC cannot work with is already loaded.$'
+m_nobuf db      7, 'DOSKEYSC is already loaded; a new /BUFSIZE needs /REINSTALL too.$'
+m_inval db      'Not understood: a macro is written NAME=text.$'
+m_nomem db      7, 'No room left for that macro.  DOSKEYSC /REINSTALL /BUFSIZE=size loads a copy', 13, 10
+        db      'with a bigger buffer (history and macros share it).$'
+m_dosv  db      7, 'DOSKEYSC needs MS-DOS 5.0 or later.$'
 m_crlf  db      13, 10, '$'
 m_other db      'The DOSKEY already loaded is not DOSKEYSC, so TAB does not complete names.', 13, 10
         db      'DOSKEYSC /REINSTALL loads DOSKEYSC over it, or load DOSKEYSC in its place.$'
 
-m_help  db      'Edits command lines, recalls MS-DOS commands, creates macros, and completes', 13, 10
-        db      'file names.  DOSKEYSC 1.0, by StevenC & Claude.', 13, 10, 13, 10
+m_help  db      'DOSKEYSC 1.1, by StevenC & Claude: line editing, a history of commands,', 13, 10
+        db      'macros, and TAB to complete file names.  MS-DOS 5 and later.', 13, 10, 13, 10
         db      'DOSKEYSC [/REINSTALL] [/BUFSIZE=size] [/MACROS] [/HISTORY]', 13, 10
-        db      '  [/INSERT | /OVERSTRIKE] [/TAB | /NOTAB] [macroname=[text]]', 13, 10, 13, 10
-        db      '  /REINSTALL    Installs a new copy of Doskey.', 13, 10
-        db      '  /BUFSIZE=size Sets size of command history buffer.', 13, 10
-        db      '  /MACROS       Displays all Doskey macros.', 13, 10
-        db      '  /HISTORY      Displays all commands stored in memory.', 13, 10
-        db      '  /INSERT       Specifies that new text you type is inserted in old text.', 13, 10
-        db      '  /OVERSTRIKE   Specifies that new text overwrites old text.', 13, 10
-        db      '  /TAB /NOTAB   Turns TAB filename completion on (the default) or off.', 13, 10
-        db      '  macroname     Specifies a name for a macro you create.', 13, 10
-        db      '  text          Specifies commands you want to record.', 13, 10, 13, 10
-        db      'UP and DOWN ARROWS recall commands; ESC clears command line; F7 displays', 13, 10
-        db      'command history; ALT+F7 clears command history; F8 searches command', 13, 10
-        db      'history; F9 selects a command by number; ALT+F10 clears macro definitions.', 13, 10
-        db      'TAB completes a file or directory name; TAB again and SHIFT+TAB step through', 13, 10
-        db      'the other names that match.', 13, 10, 13, 10
-        db      'The following are some special codes in Doskey macro definitions:', 13, 10
-        db      '$T     Command separator.  Allows multiple commands in a macro.', 13, 10
-        db      '$1-$9  Batch parameters.  Equivalent to %1-%9 in batch programs.', 13, 10
-        db      '$*     Symbol replaced by everything following macro name on command line.', 13, 10
+        db      '         [/INSERT | /OVERSTRIKE] [/TAB | /NOTAB] [name=[text]]', 13, 10, 13, 10
+        db      '  /REINSTALL     load another copy, even with one already resident', 13, 10
+        db      '  /BUFSIZE=size  bytes kept for history and macros together (512)', 13, 10
+        db      '  /MACROS, /M    list the macros, as NAME=text', 13, 10
+        db      '  /HISTORY, /H   list the commands remembered, oldest first', 13, 10
+        db      '  /INSERT        typing pushes the rest of the line along', 13, 10
+        db      '  /OVERSTRIKE    typing replaces the text under the cursor (default)', 13, 10
+        db      '  /TAB, /NOTAB   TAB completes names (default), or is just a TAB', 13, 10
+        db      '  name=text      make a macro; name= with nothing after it removes one', 13, 10, 13, 10
+        db      'UP, DOWN    step through the history    F7       show it, numbered', 13, 10
+        db      'PGUP, PGDN  its oldest, its newest      ALT+F7   forget it all', 13, 10
+        db      'F8          the next older command that starts with what is typed', 13, 10
+        db      'F9          fetch a command by its number      ESC  clear the line', 13, 10
+        db      'ALT+F10     remove every macro', 13, 10
+        db      'TAB         complete a file or directory name; TAB and SHIFT+TAB again', 13, 10
+        db      '            step forward and back through the others that fit', 13, 10, 13, 10
+        db      'Inside a macro:  $T starts the next command   $1..$9 its words, like %1..%9', 13, 10
+        db      '                 $* all of them   $G >   $G$G >>   $L <   $B |   $$ $', 13, 10
         db      0

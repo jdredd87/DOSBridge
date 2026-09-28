@@ -62,6 +62,29 @@ DISK = {
 }
 
 
+# DOSKEYSC's messages are its own words, not 6.22's, but each one stands in
+# for a 6.22 message line for line.  A screen row holding either wording is
+# replaced by the same token, so a comparison still fails if a message comes
+# out at a different moment, on a different row, or not at all.  Keys are a
+# few words of each -- enough to recognise the row, and nothing more of
+# Microsoft's text than that.
+MSGS = [
+    ('incompatible DOSKey is already', 'DOSKEYSC cannot work with is already', 'incomp'),
+    ('Cannot change BUFSIZE', 'a new /BUFSIZE needs /REINSTALL', 'nobuf'),
+    ('Invalid macro definition', 'a macro is written NAME=text', 'inval'),
+    ('memory to store macro', 'No room left for that macro', 'nomem 1'),
+    ('switch to increase available', 'with a bigger buffer (history', 'nomem 2'),
+    ('Incorrect DOS version', 'needs MS-DOS 5.0 or later', 'dosv'),
+]
+
+
+def msg_row(r):
+    for theirs, ours, token in MSGS:
+        if theirs in r or ours in r:
+            return ('<message %s>' % token).ljust(80)
+    return r
+
+
 def fcb_match(pat, name):
     """DOS 8.3 wildcard match, the way find-first does it."""
     def split(s):
@@ -158,8 +181,7 @@ class PC:
     def screen(self):
         s = bytes(self.uc.mem_read(0xB8000, 4000))[0::2]
         rows = [s[i * 80:(i + 1) * 80].decode('cp437') for i in range(25)]
-        # 6.22 misspells "Insufficient"; ours does not.  Same otherwise.
-        return [r.replace('Insufficient', 'Insufficent') + ' ' if 'Insufficient' in r else r for r in rows]
+        return [msg_row(r) for r in rows]
 
     def state(self):
         return (tuple(self.screen()), self.getcur(), self.r16(0x460), self.r8(0x417) & 0x80, self.beeps)

@@ -341,8 +341,18 @@ each by `extras/ansisc/bin/ANSITEST.EXE`:
 So `DEVICEHIGH`/`LH` trades speed for conventional memory on this machine,
 and a driver whose code runs constantly -- the console, the packet driver
 (`PM2000`), the EMS driver -- pays it on every call.  `ANSISC` is loaded low
-for that reason.  Whether `PM2000` and `PMEMMSC` would gain from the same was
-not measured.
+for that reason.  **Both others were measured since** (`projects/dostune`):
+
+* **`PMEMMSC` low, 2026-09-28: every per-call EMS function 2.2-2.6x
+  faster** (44h map 6,632 -> 16,307 calls a second), 16 KB moves only +5%
+  because those are the card's PSRAM either way, same behaviour, 6,992
+  bytes.  **It is loaded low now.**
+* **`PM2000` low: nothing measurable** -- 512 KB pushes and pulls, three
+  each, medians within 10%: the WiFi link is the limit, not the driver's
+  code.  It stays high.
+
+So the rule is not "load everything low": it pays where the driver's own
+code is the bottleneck, and nowhere else.
 
 ## The CMOS battery is dead, and it breaks power-cycle recovery
 

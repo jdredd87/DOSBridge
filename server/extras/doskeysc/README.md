@@ -116,8 +116,18 @@ What it costs there:
 ## Where it deliberately differs from 6.22's
 
 * TAB and SHIFT+TAB (with `/NOTAB`, TAB is 6.22's again).
-* `/TAB`, `/NOTAB`, and its own `/?` text.
-* "Insufficient memory to store macro" is spelled right.
+* `/TAB` and `/NOTAB`.
+* **Its own words** (1.1, 2026-09-28).  The `/?` text and every message are
+  written fresh, not taken from 6.22's.  Each message comes out at the
+  same moment as the 6.22 one it stands in for, with the same bell and on
+  the same number of lines, and some say more -- running out of macro room
+  says that `/REINSTALL /BUFSIZE=size` is the way to a bigger buffer,
+  because `/BUFSIZE` on a resident copy is refused.  The comparisons pair
+  the two wordings row by row (`MSGS` in `test\emudoskey.py`), so they
+  still fail if a message is missing, early, late or on the wrong row.
+  The two prompts inside editing -- F9's `Line number:` and F7's
+  `-- More --` -- are kept as they are: they are labels, not prose, and
+  the cursor after them is part of what is compared.
 * It runs on DOS 5.00 and later; 6.22's insists on exactly 6.22.
 * Plain `DOSKEYSC` with 6.22's DOSKEY already loaded says so (and that
   `/REINSTALL` loads it over), where 6.22's is silent: otherwise it would

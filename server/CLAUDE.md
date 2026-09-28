@@ -338,14 +338,19 @@ spaced ramp.
 numbers and the tools (`tune.py apply VARIANT` writes, reads back and
 reboots safely).  Program loads 23% faster, console 55-68% faster, opens
 22% faster, for 10 KB of conventional memory (576,080 free).  The files
-before it are `C:\CONFIG.TU0` and `C:\AUTOEXEC.TU0`:
+before it are `C:\CONFIG.TU0` and `C:\AUTOEXEC.TU0`.
+
+**On 2026-09-28 PMEMMSC went low too** (`tune.py` variant `final4`): EMS
+mapping 2.5x faster and every per-call EMS function 2.2-2.6x, same
+behaviour transcript, for 6,992 bytes -- **569,088 free** now.  The
+09-27 files, with it high, are `C:\CONFIG.TU1` and `C:\AUTOEXEC.TU1`:
 
 ```
 DOS=UMB                                          CONFIG.SYS
 FILES=30
 BUFFERS=30
 device=c:\drivers\umbsc.sys C800-D000 D800-E000
-devicehigh=c:\drivers\pmemmsc.sys /n
+device=c:\drivers\pmemmsc.sys /n
 device=c:\drivers\ansisc.sys
 
 LH C:\DOS\DOSKEYSC.COM                           AUTOEXEC.BAT (the rest
@@ -399,7 +404,9 @@ driver -- no conventional memory for the UMB manager (224 bytes back), EMS
 page mapping 45-57% faster, and five EMS bugs fixed.  `UMBSC` lives HERE,
 `extras/umbsc` (an optional extra, since 2026-09-27; it is not
 PicoMEM-specific); `PMEMMSC` is PicoMEM-only and stays in
-`C:\CH375USB\PicoMEM\emm`.  Their READMEs have the measurements. `BUFFERS=20` (from 40) gave
+`C:\CH375USB\PicoMEM\emm`.  Their READMEs have the measurements.  PMEMMSC
+is loaded LOW since 2026-09-28, for the same reason as ANSISC and with a
+bigger payoff (`projects/dostune`, "PMEMMSC low"). `BUFFERS=20` (from 40) gave
 back another 10,640 bytes -- 532 a buffer; nothing in the bridge needs
 more, and `FILES=30` is the setting jobs depend on. With both, free
 conventional memory went from 575,472 to **586,336**. **Build a CONFIG.SYS in a
@@ -1558,7 +1565,11 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 74 is public** (2026-09-27: windowed uploads too).
+* **Build 76 is public** (2026-09-28: DOSKEYSC 1.1, its help and messages
+  in its own words; the notes on PMEMMSC loaded low).
+  **Build 75** (2026-09-28: faster deploys -- REN into place,
+  `UGET -C` checks the CRC as it arrives).
+  **Build 74** (2026-09-27: windowed uploads too).
   **Build 73** (2026-09-27: windowed downloads, TFTP windowsize 8).
   **Build 72** (2026-09-27: the transport 4x faster, same protocol --
   `docs/network.md`, "Where the time went"). **Build 71** (2026-09-27: DOSKEYSC's TAB remembers the next eight

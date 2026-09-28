@@ -21,7 +21,9 @@ WHAT IT IS
   It is written from a study of MS-DOS 6.22's DOSKEY and contains none of
   its code. Measured in an emulator against 6.22's DOSKEY on thousands of
   keystroke sessions, and on a real NEC V30, it gives the same line, the
-  same screen and the same cursor after every key.
+  same screen and the same cursor after every key. Its help and its
+  messages are in its own words (since 1.1); each message still comes
+  at the same moment as DOSKEY's.
 
 INSTALLING
   Nothing installs it for you. Copy it:
