@@ -1156,9 +1156,46 @@ with StevenC at the machine to restart `dosd`.
 
 To a file, the disk (~240 KB/s written through DOS) is now the limit.
 `dosdeploy` of 512 KB: 30.7 s -> 24.1 s (it also verifies on the box).
-**Uploads are still stop-and-wait** (512 KB raw `UPUT` 7.8 s): the same
-change on that side needs UPUT to seek back and resend a window after a
-gap, and `tftp_recv_blob` to ACK per window.
+
+### Windowed uploads (2026-09-27, night)
+
+The same on the other side.  UPUT asks for `windowsize 8`; dosd grants it
+only to a client that asks.
+
+* **UPUT** sends up to 8 blocks, then waits for the ACK that says how many
+  arrived (0..8), and advances that far.  Short of the window, it **seeks
+  back** in the file to the first byte not acknowledged and sends from
+  there; silence sends the window again.  Keeping the window's blocks in
+  memory would cost 11 KB for something that almost never happens; a seek
+  and a re-read cost nothing until it does.  The stall-restart (a fresh
+  flow asking to carry on at `@offset`) is shared with the stop-and-wait
+  path, moved to the top of the loop unchanged.
+* **dosd** (`tftp_recv_blob_windowed`) mirrors UGET: ACK each window's end
+  or the file's last block, one re-ACK of the last good block per burst on
+  a repeat or a gap, silence re-ACKs.
+* **The last ACK, lost.**  The loopback test found it at once: with 5-20%
+  loss, 13 of 99 uploads were reported failed although dosd held every
+  byte.  dosd had returned the moment the last block arrived, so when its
+  final ACK went missing the client resent, heard nothing, restarted, and
+  was refused -- the upload had completed and was no longer held.
+  Stop-and-wait has the same hole.  Fixed for windowed writes by
+  **dallying** (RFC 1350): a duplicate of the transfer socket answers any
+  repeat of the last block with the final ACK for 3 seconds, in a
+  background thread, so the upload itself returns at once and no job
+  result waits.  After it: 198 of 198.
+* `DOSD_TEST_DROP_RX` drops that fraction of windowed DATA dosd receives.
+  On the V30 with 5% dropped each way: three 512 KB downloads with 14, 16
+  and 19 gaps, and three pulls, **all byte-exact**.  A block lost at the end
+  of a window costs a 2-second timeout; the real link lost none in the
+  clean runs.
+
+| 512 KB on the V30, byte-exact | stop-and-wait | window 8 |
+|---|---|---|
+| `UPUT` alone | 7.8 s | **5.9 s** |
+| `dospull` | 12.0 s | **10.0 s** |
+
+`projects/dostune/test_window_put.py` is the upload's loopback test;
+`simulate_dos.py` sends windowed as UPUT does; `selftest.py` passes.
 
 ## The original investigation: large transfers are NOT ARP
 

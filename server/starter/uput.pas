@@ -122,6 +122,9 @@ begin
   { Ask for big blocks. A result is one or two either way, but a `dosctl
     pull` of a real file is the case this pays for. }
   TftpWantBlk := TFTP_BLK_MAX;
+  { Eight blocks in flight, if the server grants it (2026-09-27); an older
+    dosd ignores the option and the send is stop-and-wait. }
+  TftpWantWin := 8;
   Ok := TftpPut(TFTP_PORT, Local, Remote);
 
   NetClose;

@@ -213,19 +213,27 @@ def tftp_get(name, blk_want=BLK_WANT, timeout=10, tries=5, win_want=WIN_WANT):
         s.close()
 
 
-def tftp_put(name, blob, blk_want=BLK_WANT, timeout=10, tries=5):
-    """Send `blob` to dosd under `name`. Returns True on success."""
+def tftp_put(name, blob, blk_want=BLK_WANT, timeout=10, tries=5,
+             win_want=WIN_WANT):
+    """Send `blob` to dosd under `name`. Returns True on success.
+
+    As UPUT does it: ask for windowsize, and if the server grants a window,
+    send that many blocks and wait for the ACK saying how many arrived; go
+    on from there (from the first one missing, if some did not); on
+    silence send the window again.  Without a window, stop-and-wait.
+    """
     s = udp()
     s.settimeout(timeout)
     try:
-        req = _rq(OP_WRQ, name, blk_want)
+        req = _rq(OP_WRQ, name, blk_want, win_want if blk_want else 0)
         s.sendto(req, (HOST, TFTP_PORT))
 
         blk = BLK_DEFAULT
+        win = 1
         peer = None
         left = tries
 
-        # Wait for the go-ahead: ACK 0, or an OACK naming the block size. The
+        # Wait for the go-ahead: ACK 0, or an OACK naming the options. The
         # OACK REPLACES ack 0 rather than joining it, and unlike a read the
         # client does not acknowledge it -- the first DATA block is the answer.
         while peer is None:
@@ -241,39 +249,56 @@ def tftp_put(name, blob, blk_want=BLK_WANT, timeout=10, tries=5):
             if op == OP_ERROR:
                 return False
             if op == OP_OACK:
-                got = _opts(data).get("blksize")
-                if got:
-                    blk = int(got)
+                o = _opts(data)
+                if o.get("blksize"):
+                    blk = int(o["blksize"])
+                if o.get("windowsize"):
+                    win = int(o["windowsize"])
                 peer = addr
             elif op == OP_ACK and struct.unpack("!H", data[2:4])[0] == 0:
                 peer = addr
 
-        n = 1
-        off = 0
+        n = 1                    # the first block not yet acknowledged
+        off = 0                  # its offset in the blob
         left = tries
         while True:
-            chunk = blob[off:off + blk]
-            s.sendto(struct.pack("!HH", OP_DATA, n & 0xFFFF) + chunk, peer)
-            try:
-                data, addr = s.recvfrom(65535)
-            except socket.timeout:
+            # up to `win` blocks from there (one, stop-and-wait)
+            sent, lens, final = 0, [], False
+            pos = off
+            while sent < win and not final:
+                chunk = blob[pos:pos + blk]
+                s.sendto(struct.pack("!HH", OP_DATA, (n + sent) & 0xFFFF)
+                         + chunk, peer)
+                pos += len(chunk)
+                lens.append(len(chunk))
+                sent += 1
+                final = len(chunk) < blk
+            moved = None
+            while moved is None:
+                try:
+                    data, addr = s.recvfrom(65535)
+                except socket.timeout:
+                    break
+                if addr != peer:
+                    continue
+                op = struct.unpack("!H", data[:2])[0]
+                if op == OP_ERROR:
+                    return False
+                if op != OP_ACK:
+                    continue
+                d = ((struct.unpack("!H", data[2:4])[0] - (n - 1) + 0x8000)
+                     & 0xFFFF) - 0x8000
+                if 0 <= d <= sent:
+                    moved = d    # anything else is a stale ACK
+            if moved is None:
                 left -= 1
                 if left <= 0:
                     return False
-                continue
-            if addr != peer:
-                continue
-            op = struct.unpack("!H", data[:2])[0]
-            if op == OP_ERROR:
-                return False
-            if op != OP_ACK:
-                continue
-            if struct.unpack("!H", data[2:4])[0] != (n & 0xFFFF):
-                continue          # stale ACK; resend the same block
+                continue         # silence: the window again
             left = tries
-            off += len(chunk)
-            n += 1
-            if len(chunk) < blk:
+            off += sum(lens[:moved])
+            n += moved
+            if moved == sent and final:
                 return True
     finally:
         s.close()

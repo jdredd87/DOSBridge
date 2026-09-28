@@ -1786,6 +1786,9 @@ TFTP_WIN_MAX = 8
 # Testing only: throw away this fraction of the DATA packets of windowed
 # transfers, so their recovery runs on the real link.  Never set in use.
 TEST_DROP = float(os.environ.get("DOSD_TEST_DROP", "0") or 0)
+# ...and this fraction of the DATA packets a windowed WRITE receives, so the
+# client's gap handling (UPUT seeking back) runs too.
+TEST_DROP_RX = float(os.environ.get("DOSD_TEST_DROP_RX", "0") or 0)
 
 
 def tftp_send_blob_windowed(sock, addr, blob, retries, blk, window, cancel=None):
@@ -2040,8 +2043,117 @@ def upload_buf(key, resume_at):
         return buf
 
 
+def _dally(sock, addr, final_blk, secs=3.0):
+    """Keep answering a finished write's last block for a few seconds.
+
+    If our final ACK is lost the client sends its last window again -- and
+    without anyone to answer it, it gives up, restarts, and is refused ("no
+    upload held there": it already completed), so a write that ARRIVED is
+    reported by the client as failed.  RFC 1350 calls this dallying.  It
+    runs on a duplicate of the transfer socket, in the background, so the
+    upload itself returns at once and no job result waits on it.
+    """
+    try:
+        d = sock.dup()
+    except (OSError, AttributeError):
+        return
+
+    def run():
+        try:
+            d.settimeout(0.5)
+            end = time.time() + secs
+            while time.time() < end:
+                try:
+                    data, src = d.recvfrom(2048)
+                except socket.timeout:
+                    continue
+                if (src == addr and len(data) >= 4
+                        and struct.unpack("!H", data[:2])[0] == OP_DATA):
+                    d.sendto(struct.pack("!HH", OP_ACK, final_blk & 0xFFFF),
+                             addr)
+        except OSError:
+            pass
+        finally:
+            d.close()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def tftp_recv_blob_windowed(sock, addr, blk_size, window, first, out,
+                            cancel=None):
+    """A TFTP write with `window` blocks in flight (RFC 7440).
+
+    The mirror of what UGET does on a windowed read: ACK the last block of
+    each window, or the last block of the file.  A block already held gets
+    one re-ACK of the last good one per burst; a gap gets one ACK of the
+    last good one, and the rest of that window is ignored until the client
+    starts again just after it.  Silence re-ACKs the last good block (the
+    OACK, before any arrived).
+    """
+    expect, inwin = 1, 0
+    dup_acked = gap_acked = False
+    sock.sendto(first, addr)
+
+    def ack(n):
+        sock.sendto(struct.pack("!HH", OP_ACK, n & 0xFFFF), addr)
+
+    while True:
+        got = None
+        for _ in range(TFTP_RETRIES):
+            if cancel is not None and cancel.is_set():
+                return None
+            try:
+                data, src = sock.recvfrom(blk_size + 512)
+            except socket.timeout:
+                if expect == 1:
+                    sock.sendto(first, addr)
+                else:
+                    ack(expect - 1)
+                inwin = 0
+                dup_acked = gap_acked = False
+                continue
+            if src != addr or len(data) < 4:
+                continue
+            op, blk = struct.unpack("!HH", data[:4])
+            if op == OP_ERROR:
+                return None
+            if op != OP_DATA:
+                continue
+            if TEST_DROP_RX and random.random() < TEST_DROP_RX:
+                continue
+            got = (blk, data[4:])
+            break
+        if got is None:
+            return None
+        blk, payload = got
+        diff = ((blk - expect + 0x8000) & 0xFFFF) - 0x8000
+        if diff == 0:
+            dup_acked = gap_acked = False
+            out += payload
+            inwin += 1
+            last = len(payload) < blk_size
+            if last or inwin >= window:
+                ack(blk)
+                inwin = 0
+            expect += 1
+            if last:
+                _dally(sock, addr, blk)
+                return bytes(out)
+        elif diff < 0:
+            # Already held: they did not hear our ACK. Re-ACK the last good
+            # block, without appending, once per burst.
+            if not dup_acked:
+                ack(expect - 1)
+                dup_acked = True
+                inwin = 0
+        elif not gap_acked:
+            ack(expect - 1)
+            gap_acked = True
+            inwin = 0
+
+
 def tftp_recv_blob(sock, addr, blk_size=None, oack=None, out=None,
-                   cancel=None):
+                   cancel=None, window=1):
     """Take a TFTP write. Returns the bytes, or None if it failed.
 
     `blk_size` is the negotiated block size; `oack` is the option list to
@@ -2060,6 +2172,9 @@ def tftp_recv_blob(sock, addr, blk_size=None, oack=None, out=None,
             first += k.encode() + b"\0" + str(v).encode() + b"\0"
     else:
         first = struct.pack("!HH", OP_ACK, 0)
+    if window > 1:
+        return tftp_recv_blob_windowed(sock, addr, blk_size, window, first,
+                                       out, cancel=cancel)
     sock.sendto(first, addr)
     while True:
         got = None
@@ -2367,10 +2482,19 @@ def tftp_serve(req, addr):
                 wblk = max(8, min(want, TFTP_BLK_MAX))
                 if wblk != TFTP_BLK:
                     wack = [("blksize", wblk)]
+            # windowsize, as for a read: only for a client that asks
+            wwin = 1
+            if "windowsize" in wopts:
+                try:
+                    wwin = max(1, min(int(wopts["windowsize"]), TFTP_WIN_MAX))
+                except ValueError:
+                    wwin = 1
+                if wwin > 1:
+                    wack = (wack or []) + [("windowsize", wwin)]
             wcancel = flow_begin(addr[0], "wrq:" + name)
             try:
                 blob = tftp_recv_blob(sock, addr, blk_size=wblk, oack=wack,
-                                      out=buf, cancel=wcancel)
+                                      out=buf, cancel=wcancel, window=wwin)
             finally:
                 flow_end(addr[0], "wrq:" + name, wcancel)
             if blob is None:

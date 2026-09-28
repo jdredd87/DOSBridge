@@ -811,6 +811,9 @@ var
   LastLen : Word;
   Peer    : TIP;
   RQName  : ShortString;
+  SentN, Moved : Word;         { windowed: blocks sent this window, and ACKed }
+  D       : SmallInt;
+  Final, Fatal, Heard, Silent : Boolean;
 
   { The write request, and the wait for whatever opens the transfer: an ACK
     of block 0, or an OACK if the server took our options. Factored out
@@ -820,6 +823,7 @@ var
   var T: Integer;
   begin
     Handshake := False;
+    TftpWin := 1;               { unless the OACK says otherwise }
     T := 0;
     while TftpPeerTID = 0 do
     begin
@@ -838,6 +842,7 @@ var
           if Op = OP_OACK then
           begin
             TftpBlkSize := OackBlkSize(Got);
+            TftpWin := OackOpt(Got, 'WINDOWSIZE', 1, 8, 1);
             TftpPeerTID := NetFromPort;
           end
           else if (Op = OP_ACK) and (GetW(RxP, 2) = 0) then
@@ -860,9 +865,24 @@ var
     Handshake := True;
   end;
 
+  { Back to the first byte the server has not acknowledged, forgetting what
+    was read ahead.  False (TftpErr set) if the file will not seek. }
+  function Rewind: Boolean;
+  begin
+    {$I-}
+    Seek(F, TftpBytes);
+    {$I+}
+    RLen := 0;
+    RPos := 0;
+    Rewind := IOResult = 0;
+    if IOResult <> 0 then ;
+    if not Rewind then TftpErr := 'seek failed on ' + Local;
+  end;
+
 begin
   TftpPut := False;
   TftpErr := '';
+  TftpGaps := 0;
   TftpBytes := 0; TftpBlocks := 0; TftpResends := 0; TftpDups := 0;
   TftpPeerTID := 0;
   TftpBlkSize := TFTP_BLK;
@@ -906,8 +926,174 @@ begin
   LastLen := TftpBlkSize;
   RLen := 0;
   RPos := 0;
+  Tries := 0;
   while not Done do
   begin
+    if Restart then
+    begin
+      Inc(TftpRestarts);
+      Restart := False;
+      NetClose;
+      if not NetOpen(Peer) then
+      begin
+        TftpErr := NetErr;
+        Break;
+      end;
+      PickPort;
+      TftpPeerTID := 0;
+      { The new flow negotiates from scratch, so do not carry over the size
+        the old one agreed to. }
+      TftpBlkSize := TFTP_BLK;
+      RQName := Remote + '@' + Num(TftpBytes);
+      RQLen  := BuildRQ(OP_WRQ, RQName);
+      if not NetUdpSend(MyPort, SrvPort, Pkt, RQLen) then
+      begin
+        TftpErr := NetErr;
+        Break;
+      end;
+      if not Handshake then Break;
+      { Rewind to what the server has actually acknowledged. Anything sent
+        but unacked goes again -- at worst a duplicate, which the server
+        re-ACKs and discards rather than appending. }
+      {$I-}
+      Seek(F, TftpBytes);
+      {$I+}
+      RLen := 0;                  { what was read ahead is from before }
+      RPos := 0;
+      if IOResult <> 0 then
+      begin
+        TftpErr := 'seek failed on ' + Local;
+        Break;
+      end;
+      Block := 1;
+      Continue;
+    end;
+
+    { ---- windowed (dosd granted windowsize): up to TftpWin blocks, then
+      the ACK that says how far the server got.  A gap is sent again from
+      the first block it lacks, re-read from the file: gaps are rare, and a
+      seek is cheaper than holding a window of blocks in memory. }
+    if TftpWin > 1 then
+    begin
+      SentN := 0; Final := False; Fatal := False;
+      while (SentN < TftpWin) and not Final do
+      begin
+        ReadLen := ReadBlk(F, Pkt[4], TftpBlkSize);
+        if ReadLen < 0 then
+        begin
+          TftpErr := 'read failed on ' + Local;
+          Fatal := True;
+          Break;
+        end;
+        LastLen := Word(ReadLen);
+        PutW(Pkt, 0, OP_DATA);
+        PutW(Pkt, 2, Block + SentN);
+        NetUdpSend(MyPort, TftpPeerTID, Pkt, 4 + LastLen);
+        Inc(SentN);
+        if LastLen < TftpBlkSize then Final := True;
+      end;
+      if Fatal then Break;
+
+      Moved := 0; Heard := False; Silent := False;
+      while not Heard do
+      begin
+        if NetUdpRecv(MyPort, RxP, SizeOf(RxP), Got, TIMEOUT_TICKS) then
+        begin
+          if Got >= 4 then
+          begin
+            Op := GetW(RxP, 0);
+            if Op = OP_ERROR then
+            begin
+              TftpErr := ErrText(Got);
+              Fatal := True;
+              Heard := True;
+            end
+            else if (Op = OP_ACK) and (NetFromPort = TftpPeerTID) then
+            begin
+              { how many of this window's blocks it has: 0 .. SentN }
+              D := SmallInt(GetW(RxP, 2) - (Block - 1));
+              if (D >= 0) and (D <= SmallInt(SentN)) then
+              begin
+                Moved := Word(D);
+                Heard := True;
+              end;
+              { anything else is an ACK from an older window: keep waiting }
+            end;
+          end;
+        end
+        else
+        begin
+          Silent := True;
+          Heard := True;
+        end;
+      end;
+      if Fatal then Break;
+
+      if Silent then
+      begin
+        if Tries = 0 then
+        begin
+          MarkRx := NetRxFrames; MarkWr := NetRxWrong; MarkDr := NetRxDrop;
+        end;
+        Inc(Tries);
+        if (Tries >= RESTART_AFTER) and (TftpRestarts < MAX_RESTARTS) then
+        begin
+          Inc(TftpStallRx,    NetRxFrames - MarkRx);
+          Inc(TftpStallWrong, NetRxWrong  - MarkWr);
+          Inc(TftpStallDrop,  NetRxDrop   - MarkDr);
+          MarkRx := NetRxFrames; MarkWr := NetRxWrong; MarkDr := NetRxDrop;
+          if TftpBytes = DeadMark then
+            Inc(DeadRuns)
+          else
+            DeadRuns := 0;
+          DeadMark := TftpBytes;
+          if DeadRuns > DEAD_RESTARTS then
+          begin
+            TftpErr := 'no answer from the server';
+            Break;
+          end;
+          Restart := True;
+          Tries := 0;
+          Continue;
+        end;
+        if Tries > MAX_RETRIES then
+        begin
+          TftpErr := 'stalled at block ' + Num(Block);
+          Break;
+        end;
+        Inc(TftpResends);
+        if not Rewind then Break;     { the window again, from what it has }
+        Continue;
+      end;
+
+      Tries := 0;
+      if Moved > 0 then
+      begin
+        if (Moved = SentN) and Final then
+          TftpBytes := TftpBytes + LongInt(Moved - 1) * TftpBlkSize + LastLen
+        else
+          TftpBytes := TftpBytes + LongInt(Moved) * TftpBlkSize;
+        Inc(TftpBlocks, Moved);
+        Inc(Block, Moved);
+      end;
+      if Moved = SentN then
+      begin
+        { the whole window arrived: the file is already where the next
+          window starts -- or that was the end of it }
+        if Final then
+        begin
+          Done := True;
+          TftpPut := True;
+        end;
+      end
+      else
+      begin
+        Inc(TftpGaps);                { a block went missing: from there }
+        if not Rewind then Break;
+      end;
+      Continue;
+    end;
+
     ReadLen := ReadBlk(F, Pkt[4], TftpBlkSize);
     if ReadLen < 0 then
     begin
@@ -1027,45 +1213,7 @@ begin
       end;
     end;
 
-    if Restart then
-    begin
-      Inc(TftpRestarts);
-      Restart := False;
-      NetClose;
-      if not NetOpen(Peer) then
-      begin
-        TftpErr := NetErr;
-        Break;
-      end;
-      PickPort;
-      TftpPeerTID := 0;
-      { The new flow negotiates from scratch, so do not carry over the size
-        the old one agreed to. }
-      TftpBlkSize := TFTP_BLK;
-      RQName := Remote + '@' + Num(TftpBytes);
-      RQLen  := BuildRQ(OP_WRQ, RQName);
-      if not NetUdpSend(MyPort, SrvPort, Pkt, RQLen) then
-      begin
-        TftpErr := NetErr;
-        Break;
-      end;
-      if not Handshake then Break;
-      { Rewind to what the server has actually acknowledged. Anything sent
-        but unacked goes again -- at worst a duplicate, which the server
-        re-ACKs and discards rather than appending. }
-      {$I-}
-      Seek(F, TftpBytes);
-      {$I+}
-      RLen := 0;                  { what was read ahead is from before }
-      RPos := 0;
-      if IOResult <> 0 then
-      begin
-        TftpErr := 'seek failed on ' + Local;
-        Break;
-      end;
-      Block := 1;
-      Continue;
-    end;
+    if Restart then Continue;     { the top of the loop builds the new flow }
 
     TftpBytes := TftpBytes + LastLen;
     Inc(TftpBlocks);

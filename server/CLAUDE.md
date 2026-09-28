@@ -977,10 +977,12 @@ change that adds no credit. Those binaries -- CRC `A3B45BDD` and
 `8FA5110E` -- stayed until the transport changed for its own reasons, which
 it did on 2026-09-27 (below): first to `UGET` `502A18C8` / `UPUT`
 `C944798B`, then the same evening to **`UGET` `BA664B1B` and `UPUT`
-`490331F7`** -- windowed downloads and a receive ring -- proven on the V30
-with StevenC at the machine.  Earlier pairs are on the box as
-`C:\TOOLS\UGET.OLD`/`UPUT.OLD` (before any of it) and `UGET.PRV`/`UPUT.PRV`
-(before the window). `NTP.EXE`
+`490331F7`** -- windowed downloads and a receive ring -- and that night
+**`UPUT` `4FDD4D3E`**, windowed uploads, all proven on the V30.  Earlier
+copies are on the box as `C:\TOOLS\UGET.OLD`/`UPUT.OLD` (before any of
+it), `UGET.PRV`/`UPUT.PRV` (before the window) and `UPUT.PR2` (before the
+windowed upload); DOS will not run them under those names -- copy one over
+the `.EXE` to go back. `NTP.EXE`
 rebuilt ~420 bytes smaller the same way and did ship: it is not in the
 transport.
 
@@ -996,8 +998,11 @@ asks (the job poll and every older client stay stop-and-wait), and `Net`
 receives into an 8-slot ring.  The disk is still written only between
 windows, while the server waits for the ACK -- the rule below holds.  512 KB
 to `NUL` 8.1 s -> 4.3 s; to a file 6.5-6.8 s (the disk is now the limit);
-`dosdeploy` 45.6 s -> 24.1 s over the day.  Uploads are still
-stop-and-wait.  **Changing the transport now means changing
+`dosdeploy` 45.6 s -> 24.1 s over the day.  **Uploads went windowed the
+same night**: UPUT sends 8 and seeks back after a gap, dosd ACKs per window
+and dallies 3 s on the last block (its lost final ACK used to make a
+completed upload look failed).  512 KB `dospull` 57.6 s -> 10.0 s over the
+day.  `DOSD_TEST_DROP` / `DOSD_TEST_DROP_RX` inject loss for testing.  **Changing the transport now means changing
 `simulate_dos.py` too** -- it asks for the window the way UGET does.
 
 ## Hard constraints — these are not style preferences
@@ -1540,7 +1545,8 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 72 is public** (2026-09-27: the transport 4x faster, same protocol --
+* **Build 73 is public** (2026-09-27: windowed downloads, TFTP windowsize 8).
+  **Build 72** (2026-09-27: the transport 4x faster, same protocol --
   `docs/network.md`, "Where the time went"). **Build 71** (2026-09-27: DOSKEYSC's TAB remembers the next eight
   names, 5x faster cycling). **Build 70** (2026-09-27: DOSKEYSC, a directory completes with no
   trailing `\`, which CD refuses). **Build 69** (2026-09-27: `extras/doskeysc`, DOSKEYSC -- 6.22's
