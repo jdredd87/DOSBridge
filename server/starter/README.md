@@ -24,6 +24,11 @@ PASS  CPU identified
 Exit code is the number of failures, so Claude Code can just run `test.cmd` and
 react to a non-zero result.
 
+**To use the tools rather than build them**, [`TOOLS.md`](TOOLS.md) is the
+reference: every program in the client kit, its command line, its exit codes
+and what to be careful of.  The kit carries the same page as its own
+`README.md`.
+
 ---
 
 ## Installing the cross-compiler
@@ -69,6 +74,10 @@ in **`demos\`**. `build.cmd` looks in both, and everything builds into the one
 | `vga.pas` | mode 13h plumbing: `SetMode`, `FillSpan`, palette, retrace |
 | `prof.pas` | section timing and a stack watermark, PIT-resolution |
 | `net.pas` | IPv4 + UDP on the packet driver -- no mTCP. Always `NetClose` |
+| `tftp.pas` | TFTP client on top of `Net` -- see *Networking* below |
+| `vidfix.pas` | puts back the INT 10h vector FPC's runtime hooks, which wedges a 386 with no 387. `About` pulls it in; `UGET` and `UPUT` name it |
+| `sumbuf.inc` | the UDP checksum in assembly, included by `net.pas`; `sumtest.pas` proves it equal to the Pascal it replaced |
+| `crc32.inc` | CRC-32 in assembly, for `UGET -C`; `crctest.pas` proves it against a bit-by-bit reference |
 
 **Machine and diagnostics**
 
@@ -88,6 +97,11 @@ in **`demos\`**. `build.cmd` looks in both, and everything builds into the one
 | `mouse.pas` | exercise the mouse through INT 33h |
 | `beep.pas` | PC speaker; `ALERT` when a human is needed |
 | `mkkeyhit.py` | **not Pascal** -- emits the 22-byte `KEYHIT.COM` the agent polls |
+| `netchk.pas` | the agent's "is it us or them?" check when polls keep failing; reboots only when neither the server nor the router answers |
+| `ask.pas` | `ASK`: type a request to the Windows side, opened by F10 at the agent |
+| `f10hit.asm` | **not Pascal** -- NASM. `F10HIT.COM`, 27 bytes: was F10 among the keys waiting? |
+| `scrloff.asm` | **not Pascal** -- NASM. `SCRLOFF.COM`: ScrollLock off, lamp included, as the agent stops |
+| `reboot.asm` | **not Pascal** -- NASM. `REBOOT.COM` and `COLDBOOT.COM` (`-DCOLD`), 16 bytes each; the kit ships the copies in `dos\` |
 | `elapsed.asm` | **not Pascal** -- NASM. `ELAPSED.COM`, the job stopwatch behind the console's footer line. `cpu 8086` makes the assembler enforce the baseline; MNASMFIX-compatible so it also builds on the box |
 
 **Video**
@@ -112,6 +126,16 @@ in **`demos\`**. `build.cmd` looks in both, and everything builds into the one
 | `tftp.pas` | TFTP client on top of `Net` -- both directions, stop-and-wait, 1400-byte blocks (RFC 2348), and resume-from-offset when a transfer stalls |
 | `uget.pas` | `UGET`: fetch from dosd over UDP. Replaces mTCP's `HTGET` |
 | `uput.pas` | `UPUT`: send to dosd over UDP. Replaces mTCP's `NC` |
+
+**Driving interactive programs** -- resident, so they can act while another
+program runs
+
+| | |
+|---|---|
+| `kinj.asm` | **NASM.** `KINJ.COM`: scripted keystrokes in, screens captured out |
+| `mkkeys.py` | compiles a KINJ script (`session.txt`, `demo.txt`, `story.txt` are worked ones) into a `.KI` |
+| `knet.asm` | **NASM.** `KNET.COM`: a live keyboard over the network |
+| `sendkeys.py` | KNET's Windows end: type here, it arrives there. See `knet.md` |
 
 **The worked example** -- here, not in `demos\`: it is what `build.cmd` and
 `test.cmd` build when given no name
