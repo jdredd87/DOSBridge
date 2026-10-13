@@ -205,3 +205,32 @@ done. The frame timing that prompted this was settled off the capture card
 instead, which has no such ambiguity: quarter the region, difference successive
 frames, and look at whether all the quarters move together.
 
+## TASM: a `RET` inside a `FAR` procedure is a `RETF`
+
+Found 2026-10-02 in the Wolf3D port (`C:\wolf3d`, its step 91), by StevenC
+and Claude.  TASM picks `RET`'s encoding from the enclosing `PROC`, so a
+helper reached by a near `CALL` to a local label inside a `PROC ... FAR`
+assembles its `ret` as `CB` -- it pops a segment as well as the offset and
+the machine goes into the weeds.  The 486 hung on the first call and needed
+a power cycle.  Write `RETN` (or `RETF`) explicitly whenever a return is not
+the procedure's own, and read the listing (`TASM /l`): `C3` is near, `CB`
+far.
+
+Two more from the same port, both in its V30NOTES: a difference of two
+forward labels used as an immediate can come out wrong in TASM's single
+pass (compute it at run time from two `OFFSET`s), and a jump TASM assembled
+short has only two bytes to patch.
+
+## FPC: `ParamStr(n)` is empty until `ParamCount` has been called
+
+Found 2026-10-06 in the Wolf3D multiplayer work (`C:\wolf3d`, `mp/mpping.pas`),
+by StevenC and Claude.  Free Pascal 3.2.2's i8086-msdos runtime parses the
+command line lazily, and only `ParamCount` starts the parse: a program whose
+first act is `S := ParamStr(1)` gets `''` -- in the small and large models,
+with or without any units -- while `ParamCount` already reports the right
+number.  Call `ParamCount` first (every starter tool happens to, by testing
+it before reading arguments, which is why none of them ever showed this).
+
+Proven with a nine-line program on the 486: `ParamStr(1)` and `ParamStr(2)`
+read `''`; after `for I := 1 to ParamCount`, the same calls read `PING` and
+`1.2.3.4`.

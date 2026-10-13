@@ -51,15 +51,82 @@ applies to code written here: the INT 10h hook, the 256-byte environment,
 and "run on both -- gate at run time" for any 386 someone else has.
 
 **2026-09-28: a 486DX/33 is on the bridge, with the PicoMEM 1 and the
-retired 386SX's SD card -- so it polls from .67 as `sx386`**, and
+retired 386SX's SD card -- it polls from .67 as `dx486`** (**a 66 MHz
+CPU since 2026-10-04**, measured at 66.7; `docs/hardware.md` has its
+`BENCH`), and
 `boxes.json` registers it under that id (its own smart plug, set there;
-no capture stick).  StevenC offered it for testing; its tools are a few days behind
+no capture stick).  It first polled as `sx386`, the id on that SD card;
+renamed the same evening at StevenC's request by changing `SET BOXID=`
+in its `C:\AI\AI.BAT` (the old file is `C:\AI\AI.SX3`) and its
+`boxes.json` key, then a warm reboot.  **Rename a box at both ends at
+once:** the registry alone leaves the box declaring the old id, which
+`dosd` routes by address but warns about on every poll.  StevenC offered it for testing; its tools are a few days behind
 the V30's.  `FPU` reads "80386 or later" with a coprocessor; `MEM`: 3 MB of
 extended memory, no EMS, no UMBs.  **Its PicoMEM 1 has EMS off** in the
 card's own configuration (`PMCFG`), which is a setting on its boot disk,
 so it was left alone.  `LASTDRIVE=G` was added to its `CONFIG.SYS` for
 `DEVLOAD` (original: `C:\CONFIG.X0`; `projects\dostune\cfg486.py`).
-Commands need `--box sx386`: the V30 stays the default.
+**On 2026-10-01 its `CONFIG.SYS` was StevenC's own** -- `FILES=30`,
+`BUFFERS=40`, `LASTDRIVE=G`, `device=c:\dos\himem.sys`, so the 486 has XMS
+-- and at his instruction `SHELL=C:\COMMAND.COM C:\ /E:1024 /P` was added:
+every bridge job had printed `Out of environment space` and lost its exit
+code (the 256-byte environment, as on the 386SX's card).  The file before
+it is `C:\CONFIG.X1`; read back byte for byte before the reboot.
+**`cfg486.py` rebuilds from `CONFIG.X0`, which predates HIMEM -- do not
+run it now without updating it.**  On that box's PicoMEM 1, AdLib music
+slows the disk (`docs/hardware.md`).
+**2026-10-04: StevenC had added a CD-ROM driver (`oakcdrom.sys`) and
+`MSCDEX`; 62 KB of them left 487 KB free, under Wolf3D's start-up check.
+At his instruction both lines are `REM`ed the same night** (the files
+before: `C:\CONFIG.X2`, `C:\AUTOEXEC.X2`; read back byte for byte) --
+549 KB free again.  The warm reboot after it did not come back (87 W, no
+polls; `dosctl reboot` had reported it "back up after 16s" from a poll
+made before the reboot ran) and a plug cycle did.
+**2026-10-06: an AWE64 Value (CT4520) is in the 486**, Plug-and-Play with
+no jumpers, so nothing answered until `projects/pnpsb` (PNPSB, ours) woke
+it from `AUTOEXEC.BAT` at StevenC's request -- Sound Blaster 220h, **IRQ 9**
+(IRQ 5 never reaches the processor in that machine; Wolf3D takes 2/3/5/7,
+and IRQ 9 is "IRQ 2" to it), DMA 1/5, MPU 330h, EMU8000 620h, and its OPL3
+at 388h (`/FM`) -- StevenC turned the PicoMEM's audio off the same day --
+and Creative's `AWEUTIL /S` after `BLASTER`: an AWE's FM goes through the
+EMU8000, which keeps it muted until initialized.  `BLASTER=A220 I2 D1 H5
+P330 E620 T6`.  The file before is `C:\AUTOEXEC.X3`; proven by a power
+cycle.  Its README has the rest.
+Commands need `--box dx486`: the V30 stays the default.
+
+**2026-10-13: a third machine, `p3box`, at .71** -- a 386-or-later with a
+coprocessor, BIOS 04/22/99, MS-DOS 6.22 on a new 4 x 2 GB drive, no
+HIMEM yet; a **D-Link DE-220PCT rev D2** (NE2000-style, jumperless) at
+**240h IRQ 3**, `C:\DRIVERS\DE22XPD.COM 0x60 0x240 3`.  Set up from a
+bootable install floppy (FDISK, FORMAT, the base kit, D-Link's driver --
+`projects/instdisk` builds one, and says how to finish it on a DOS box),
+the rest of `C:\TOOLS` sent with `dosctl upgrade --tools --box p3box`.
+D-Link's SETUP and its driver's own search never found the card;
+`extras/hwprobe`'s NICSCAN did.  `--box p3box`; no plug, no capture.
+It is really an **Intel 440BX** board (PCILIST: a Pentium II/III -- the
+CPU probe stops at "386 or later"), two Voodoo2s and an ATI Rage Pro AGP;
+`C:\DOS` is the 486's whole MS-DOS 6.22 set, and **its `CONFIG.SYS`
+loads `HIMEM.SYS` and `DOS=HIGH`** at StevenC's instruction (612 KB free,
+64 MB XMS; the file before is `C:\CONFIG.X0`).  **Onboard sound is a
+Yamaha YMF740C** (PCI): Yamaha's `SETUPDS /S` in `C:\YAMAHA` turns on its
+Sound Blaster Pro (220h, DMA 1) and OPL3 (388h) at boot, and with
+`DS.INI`'s `IRQMODE=0` the interrupt is IRQ 5 -- in Yamaha's PCI mode it
+was the chip's PCI line, IRQ 10, which DOS games cannot use.  Hence the
+network card on IRQ 3.  `BLASTER=A220 I5 D1 T4 P330`; the `AUTOEXEC.BAT`
+before is `C:\AUTOEXEC.SND`.  `extras/hwprobe`'s SNDPROBE `/T` proves an
+IRQ and DMA, PCILIST names every PCI device and its IRQ.
+
+**2026-10-13: "ask Claude" from a DOS machine.**  F10 in the agent loop
+opens `ASK.EXE`; what is typed goes to dosd as `asks/<box>.txt` (an upload
+dosd does not route lands under `files/`, so dosd needed nothing new).
+A Claude Code session runs `python askwatch.py` in the background: it
+moves the request to `asks/` (git-ignored) and exits, which wakes the
+session; it does the work and answers on the box's screen (a job's output
+shows on its console), then starts the watcher again.  `F10HIT.COM`
+(`starter/f10hit.asm`) takes every waiting key and says whether F10 was
+one -- a queued key works now because the poll is UGET's, which never
+reads the keyboard (KEYHIT's ScrollLock dates from mTCP's HTGET eating
+keys).  On all three boxes since 2026-10-13; `docs/agent.md` has it.
 
 Its last day, for the record: with the PicoMEM 1 it ran `PM2000` SC5
 CRC-exact, at the original's speed. With the **PicoMEM 2** it never got a
@@ -102,19 +169,21 @@ hypothesis about a transport fault on top of it before running `PMINFO`. The
 date stamp is not decoration: **a dated claim about which card is where is
 evidence that it was true once, and nothing more.** One command settles it.
 
-**The 386SX's card is a firmware release behind, and that is a footnote
-rather than a lead.** The newest PicoMEM 1 WiFi build is
-`PM_W_11_16_25.uf2`, 16 Nov 2025, from `firmware/` in
-https://github.com/FreddyVRetro/ISA-PicoMEM (PicoMEM 2 builds live in
-`firmware/PicoMEM2/`). `PMINFO` reports "firmware: revision not reported; go
-by the BIOS date", so the ROM date is a proxy for the build, not the build
-number.
-
-It is listed here for completeness, **not** as the explanation for anything:
-that box's transfer losses are its distance from the router, per the table
-above. Updating needs MicroUSB and the BOOTSEL button -- it cannot be done
-over the bridge -- and **the card is the boot disk**, so read the PicoMEM
-README first and have a reason better than "it was behind".
+**The PicoMEM 1 is on the newest PicoMEM 1 firmware -- this file said for
+weeks that it was a release behind, and that was wrong.** Checked
+2026-10-01 by unpacking the published UF2 files and finding the ROM's own
+`(Date yyyy-mm-dd)` string, the one `PMINFO` prints: `PM_W_11_16_25.uf2`
+(16 Nov 2025, the newest PicoMEM 1 build, from `firmware/` in
+https://github.com/FreddyVRetro/ISA-PicoMEM) carries BIOS **2025-11-02**,
+exactly what the card reports; `PM_W_5_27_25` carries 2025-05-24 and
+`PM_W_3_11_25` 2025-03-11.  The BIOS is built some days before the release
+it ships in, so **the BIOS date is not the release date** -- the mistake
+was reading 11-02 as older than 11-16.  To place a card, find its BIOS date
+inside the firmware files, not on the calendar.  No PicoMEM 1 release has
+come since (PicoMEM 2 builds live in `firmware/PicoMEM2/`, the newest June
+2026).  Updating, when there is something to update to, needs MicroUSB and
+the BOOTSEL button -- not over the bridge -- and **the card is the boot
+disk**, so read the PicoMEM README first.
 
 **There is only ONE SD card**, and it moves between the two PicoMEM cards.
 So the boot disk is the same disk whichever card is in the machine: one
@@ -344,7 +413,7 @@ spaced ramp.
 
 `C:\MTCP` exists but is empty; the real tools are under `C:\NETWORK\MTCP`.
 
-**`CONFIG.SYS` and `AUTOEXEC.BAT` since the tuning of 2026-09-27 evening**
+**`CONFIG.SYS` and `AUTOEXEC.BAT` since the tuning of 2026-09-27 evening** (for the file as it is now, see `w3dA` below)
 -- measured one boot configuration at a time, `projects/dostune` has the
 numbers and the tools (`tune.py apply VARIANT` writes, reads back and
 reboots safely).  Program loads 23% faster, console 55-68% faster, opens
@@ -375,6 +444,18 @@ LH C:\DOS\DOSKEYSC.COM                           AUTOEXEC.BAT (the rest
 LH C:\DOS\FASTOPEN.EXE C:=50                      as before)
 LH C:\drivers\pm2000.com 0x60
 ```
+
+**Later that night a `device=c:\drivers\ch375ext.sys @260` line had
+appeared after XMSSC** (4,384 bytes low; not recorded when), and **on
+2026-09-29 ANSISC and CH375EXT came out** -- variant `w3dA`, at StevenC's
+instruction, for Wolf3D's page cache (`C:\wolf3d`, the Wolf3D-V30 repo):
+**570,176 free, 557 KB for a program** (was 548).  Measured with the
+game's own TIMEDEMO: 41 -> 44 cache pages, evictions 57 -> 31, play ~0.6%
+faster.  `BUFFERS=20` (variant `w3dB`) gave one more page and **no**
+measurable gain, so `BUFFERS` stays 30 for the bridge's program loads.
+The files before are `C:\CONFIG.W3B` and `C:\AUTOEXEC.W3B`, and
+`python tune.py apply xms2c` rebuilds them byte for byte.  Without ANSISC
+there is no ANSI driver at all; nothing in the agent uses escapes.
 
 **The disk was checked the same evening**: `CHKDSK` had found 23 lost
 allocation units in 7 chains (94 KB, from earlier crashes -- the biggest was
@@ -1170,6 +1251,13 @@ This cost a debugging round: `IF NOT "%MTCPCFG%"=="" IF EXIST %MTCPCFG% FIND
 the same `FIND` behind a single `IF` worked. One `IF` per line; branch with
 `GOTO` when two conditions are needed.
 
+**A redirect on an `IF` line happens even when the `IF` is false.**
+COMMAND.COM opens the file before it tests the condition, so
+`IF ERRORLEVEL 4 ECHO A > PICK.TXT` creates (or empties) `PICK.TXT`
+every time. Found 2026-10-05 in Wolf3D's `SHOWCASE.BAT`: four such lines
+left the file empty, and an `IF ERRORLEVEL 2 ECHO N > NOID.FLG` made the
+flag exist on every answer. Branch with `GOTO` to a line that redirects.
+
 **mTCP tools consume queued keystrokes.** `HTGET` and `NC` poll the keyboard so
 ESC or Ctrl-Break can abort a transfer, and they eat whatever is waiting. Never
 build a control mechanism on `INT 16h` buffered input in a loop that also does
@@ -1338,6 +1426,10 @@ fpc -Tmsdos -Pi8086 -WmLarge -FEbuild -FUbuild <name>.pas
 
 Memory model is `-WmLarge` by default. `-WmSmall` if the binary is tight and
 data fits in 64K.
+
+**Call `ParamCount` before `ParamStr`.** FPC 3.2.2's i8086 runtime parses the
+command line lazily and only `ParamCount` starts it, so `ParamStr(1)` read
+first is `''` (`docs/tools.md`).
 
 ### Assembling on the DOS box itself
 

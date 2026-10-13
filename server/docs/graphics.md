@@ -217,6 +217,32 @@ number of refreshes before waiting for the retrace -- a frame that was going to
 be short spins, one that already overran does not wait at all. **Padding is not
 throttling**: the budget it pads to is the one the beam already imposes.
 
+## On the V30, VGA writes are cheap: the instruction bytes are the cost
+
+Measured 2026-10-02 in the Wolf3D port (`C:\wolf3d`, V30NOTES "The walls'
+34%"), by StevenC and Claude.  A profile charged a third of every frame to
+Wolf's compiled scalers -- generated code that is nothing but `mov
+al,es:[si+n]` and `mov [di+ofs],al` into planar VGA memory.  The question
+was whether that time was the video card's wait states or the CPU.  Two
+builds settled it, identical except that one sent every wall pixel into a
+16 KB block of ordinary RAM instead of `A000`: **4.1% of a frame**, about
+an eighth of the scalers' time.  The rest is the V30 fetching and running
+4-byte instructions over its 16-bit bus, where a fetched word is a bus
+cycle like the store's own.
+
+So on this machine, for code that writes the screen:
+
+* **count instruction bytes before screen bytes.**  A change that writes
+  half as many bytes to the VGA can measure as nothing (Wolf's step 77);
+  one that removes a 4-byte instruction per two pixels gave 2.1% (its step
+  87, a word load feeding two texels' stores);
+* the measurement is cheap to repeat for any renderer: point the segment
+  register the stores use at a RAM buffer the same size, keep everything
+  else, and compare.  The picture is garbage while it runs, which is the
+  point.
+
+`BENCH` agrees: `MemW[]` to `B800` runs at 86% of a plain array store.
+
 ## Sound while something else is running: `starter/demos/opl2.pas`
 
 `AMOZART` plays a tune and does nothing else, so it can key a note and wait.

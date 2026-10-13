@@ -297,6 +297,36 @@ console every eight seconds.
 `CHOICE` in the `:OFFLINE` branch is the one place a real keypress works, since
 `CHOICE` reads the keyboard itself. `Q` quits there.
 
+## F10: ask Claude from the DOS machine (2026-10-13)
+
+StevenC: "Ability to type something from the DOS machines AI.bat loop? So we
+can prompt claude to do some action."  The banner says
+`ask Claude  : F10 -- type a request; the answer shows here`.
+
+**A keypress works now, where the section above says it could not.**  The poll
+is no longer `HTGET` but `UGET`, our own UDP, and `UGET` never reads the
+keyboard -- so a key pressed while it waits is still in the BIOS buffer when the
+loop comes round.  Proven on p3box: F10 pushed into the buffer (`INT 16h`
+`05h`), a `UGET` fetch, then `F10HIT` saw it and a second `F10HIT` found the
+buffer empty.  ScrollLock stays the stop key: a flag is still the better
+signal for *stopping*, and nothing needs changing there.
+
+The pieces:
+
+| | |
+|---|---|
+| `F10HIT.COM` | 27 bytes, `starter/f10hit.asm` (`nasm -f bin`; NASM ships with FPC). Takes every key waiting -- a stray key left at the front would hide an F10 behind it for ever -- and exits 1 if F10 (`4400h`) was one |
+| `ASK.EXE` | `starter/ask.pas`: lines typed until an empty one (an empty first line cancels), written with `FROM <box>` and `AT <date time>` |
+| `AI.BAT` | after the ScrollLock check, `F10HIT`; on F10 `ASK`, then `UPUT %UPHOST% C:\WORK\ASK.TXT asks/%BOXID%.txt`, and one line saying whether it went. Between polls, never inside a job |
+| dosd | nothing new: an upload under a name it does not route is kept under `files/`, so the request is `files/asks/<box>.txt` |
+| `askwatch.py` | run in the background by a Claude Code session: waits for a request, moves it to `asks/` (git-ignored), prints it and exits -- the exit is what wakes the session |
+
+The session does the work and answers on the box: a job's output shows on the
+DOS console, and a batch file `CALL`ed by a job shows its own screens (MS-DOS
+6.22 does not redirect the inside of a `CALL`ed batch), which is how a whole
+interactive test sequence ran on p3box at its own request.  Nothing acts on a
+request with no session open; it waits in `files/asks/`.
+
 ## What the box says on its own screen
 
 `AI.BAT` prints a boot banner: the build from `C:\AI\VERSION.TXT`, the job
@@ -881,6 +911,21 @@ signatures and only one of them is fixed.
 The corrected probe is deployed and will report on the next stall it sees, at
 no cost. Treat whatever it says as a hypothesis until it survives the same
 contradiction test.
+
+## A command that asks a question is a hang, and the question is invisible
+
+2026-10-02, by StevenC and Claude: a cleanup job ran `DEL C:\W3TEST\*.*`.
+DOS asks "All files in directory will be deleted! Are you sure (Y/N)?" --
+and a job's output is redirected into `C:\WORK\OUT.TXT`, so the question
+went into the file and the screen showed only the job's banner line.  The
+box sat waiting for a key, `dosctl` timed out after 120 s and called it
+hung, and StevenC, at the keyboard, saw no prompt at all.  `Y` and Enter,
+typed blind, let the job finish; nothing else was needed.
+
+So, beside bare `DATE` and `TIME` (CLAUDE.md): never `DEL *.*` -- name the
+files, or delete a known list -- nor anything else that asks (`FORMAT`,
+`COPY` onto an existing name with `/-Y`, `RD /S` on later DOSes).  If a job
+does stall on one, the box is not hung: someone types the answer blind.
 
 ## Finding out where a freeze happened: `C:\AGENT\PHASE.LOG`
 

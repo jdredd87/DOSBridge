@@ -71,6 +71,7 @@ REM  the tool was in the kit, the agent looked for it, and it was never
 REM  copied. Anything that has to be kept in step with a directory listing
 REM  should be read from the listing.
 IF EXIST ELAPSED.COM COPY ELAPSED.COM C:\TOOLS\ELAPSED.COM > NUL
+IF EXIST F10HIT.COM COPY F10HIT.COM C:\TOOLS\F10HIT.COM > NUL
 IF EXIST KEYHIT.COM COPY KEYHIT.COM C:\TOOLS\KEYHIT.COM > NUL
 IF EXIST KINJ.COM COPY KINJ.COM C:\TOOLS\KINJ.COM > NUL
 IF EXIST KNET.COM COPY KNET.COM C:\TOOLS\KNET.COM > NUL

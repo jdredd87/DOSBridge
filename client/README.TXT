@@ -1,4 +1,4 @@
-DOS Bridge  build 77  (2026-09-28)
+DOS Bridge  build 78  (2026-10-13)
 
 dosbridge client kit
 ====================
@@ -53,5 +53,6 @@ folder has a .TXT -- read it before using what is in it.
 
   EXTRAS\ANSISC     read ANSISC.TXT
   EXTRAS\DOSKEYSC   read DOSKEYSC.TXT
+  EXTRAS\HWPROBE    read HWPROBE.TXT
   EXTRAS\UMBSC      read UMBSC.TXT
   EXTRAS\XMSSC      read XMSSC.TXT

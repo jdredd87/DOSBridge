@@ -133,6 +133,30 @@ begin
   end;
 end;
 
+{ Two read-only XMS calls through the driver's entry point: 00h (version,
+  HMA) and 08h (free memory).  Nothing is allocated. }
+var XmsEntry: Pointer;
+procedure XmsInfo;
+begin
+  asm
+    push es
+    mov ax, 4310h
+    int 2Fh
+    mov word ptr [XmsEntry], bx
+    mov word ptr [XmsEntry + 2], es
+    pop es
+    xor ax, ax
+    call dword ptr [XmsEntry]
+    mov RAX, ax
+    mov RDX, dx
+    mov ah, 08h
+    xor bl, bl
+    call dword ptr [XmsEntry]
+    mov RBX, ax
+    mov RCX, dx
+  end;
+end;
+
 begin
   WriteLn('=== hwinfo ===');
 
@@ -163,8 +187,17 @@ begin
   WriteLn('  free heap (this) : ', MemAvail, ' bytes');
 
   CheckXms;
-  HasXMS := ((RAX shr 8) and $FF) = $80;
+  { the answer is in AL -- this read AH (always 43h) until 2026-09-28, and
+    so said FALSE on every machine it ever ran on }
+  HasXMS := (RAX and $FF) = $80;
   WriteLn('  XMS driver       : ', HasXMS);
+  if HasXMS then
+  begin
+    XmsInfo;
+    WriteLn('  XMS version      : ', Hi(RAX), '.', HexD[(RAX shr 4) and 15], HexD[RAX and 15],
+            ', HMA ', RDX <> 0);
+    WriteLn('  XMS free         : ', RCX, ' KB, largest block ', RBX, ' KB');
+  end;
 
   { EMS announces itself as a character device called EMMXXXX0, so read the
     name out of the header the INT 67h vector points at. }

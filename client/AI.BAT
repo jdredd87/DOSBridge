@@ -64,6 +64,7 @@ IF EXIST C:\TOOLS\UGET.EXE C:\TOOLS\UGET.EXE -INFO
 IF NOT EXIST C:\TOOLS\UGET.EXE ECHO  address     : UGET.EXE missing, no network
 IF EXIST C:\TOOLS\KEYHIT.COM ECHO  stop        : ScrollLock, or Ctrl-C
 IF NOT EXIST C:\TOOLS\KEYHIT.COM ECHO  stop        : Ctrl-C only (no KEYHIT.COM)
+IF EXIST C:\TOOLS\ASK.EXE ECHO  ask Claude  : F10 -- type a request; the answer shows here
 echo -------------------------------------------------------------------
 REM  Nothing above this line may block or touch the network. All of it runs
 REM  before the agent starts polling, so anything that waits for input -- a
@@ -163,6 +164,16 @@ IF NOT EXIST C:\TOOLS\KEYHIT.COM GOTO NOKEY
 C:\TOOLS\KEYHIT.COM
 IF ERRORLEVEL 1 GOTO QUIT
 :NOKEY
+REM  F10: a request for Claude (StevenC and Claude, 2026-10-13).  A queued
+REM  key works here now, where it did not when KEYHIT was written: the poll
+REM  is UGET's, and UGET never reads the keyboard, so a key pressed while
+REM  it waits is still in the BIOS buffer when the loop comes round.
+REM  F10HIT takes every key waiting and says whether F10 was one.
+IF NOT EXIST C:\TOOLS\F10HIT.COM GOTO NOASK
+IF NOT EXIST C:\TOOLS\ASK.EXE GOTO NOASK
+C:\TOOLS\F10HIT.COM
+IF ERRORLEVEL 1 GOTO ASK
+:NOASK
 IF EXIST C:\AGENT\JOB.BAT DEL C:\AGENT\JOB.BAT
 REM  POLL tells UGET this is the long poll: several seconds per attempt,
 REM  up to three attempts. Retransmitting a poll request is only safe
@@ -219,6 +230,24 @@ DEL C:\AGENT\OFFSAID.FLG
 DEL C:\AGENT\OFFLINE.FLG
 :GOTJOB
 CALL C:\AGENT\JOB.BAT
+GOTO LOOP
+
+:ASK
+REM  ASK writes the lines typed, with this box's name and the time, and
+REM  the bridge keeps them as files\asks\BOXID.txt -- an upload under any
+REM  name dosd does not route goes there, so dosd needs nothing new.  A
+REM  Claude Code session runs askwatch.py, which wakes it with the text.
+REM  Between polls, never inside a job: a job waiting is held by dosd.
+C:\TOOLS\ASK.EXE %BOXID% C:\WORK\ASK.TXT
+IF ERRORLEVEL 1 GOTO LOOP
+IF "%BOXID%"=="" GOTO ASKANY
+C:\TOOLS\UPUT.EXE %UPHOST% C:\WORK\ASK.TXT asks/%BOXID%.txt
+GOTO ASKED
+:ASKANY
+C:\TOOLS\UPUT.EXE %UPHOST% C:\WORK\ASK.TXT asks/box.txt
+:ASKED
+IF ERRORLEVEL 1 ECHO  [ask] NOT sent -- the server did not take it; F10 to try again
+IF NOT ERRORLEVEL 1 ECHO  [ask] sent to Claude -- the answer will show here
 GOTO LOOP
 
 :OFFLINE

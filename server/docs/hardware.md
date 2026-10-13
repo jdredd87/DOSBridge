@@ -247,6 +247,57 @@ its 16-bit equivalent, and `REP STOSW` still beats per-element `MemW[]` by
 about 6x. The immediate shift is 8% faster than going through CL here, against
 11% on the V30 -- still not worth a gated fast path on its own.
 
+## The 486, at 66 MHz (2026-10-04)
+
+StevenC fitted a 66 MHz CPU to the 486 (`dx486`) on 2026-10-04.  The clock
+was measured, not assumed: `DEC CX` / `JNZ` is 4 clocks an iteration on any
+486, and 503 runs of 65,536 took 36 BIOS ticks -- **66.7 MHz**.  `FPU`
+reads "80386 or later" with "80387 or later", as before.  Its `BENCH`, 18
+ticks a test (no figures were taken at 33 MHz, so there is no before):
+
+| | 486 at 66 | vs the V30 |
+|---|---|---|
+| loop + increment | 2,232,521 | 25x |
+| 16-bit add | 2,333,640 | 32x |
+| 16-bit multiply | 2,204,220 | 38x |
+| 16-bit divide | 1,512,620 | 29x |
+| 32-bit multiply | 299,280 | 27x |
+| 32-bit divide | 248,721 | 34x |
+| array[] store | 2,326,487 | 34x |
+| procedure call | 1,413,521 | 30x |
+| shl by CL | 7,329,540 | 40x |
+| shl by immediate (186) | 8,239,540 | 40x |
+| MemW[] to B800 | 3,158,701 | 54x |
+| REP STOSW to B800 | 5,360,901 | 12x |
+| FPU add / multiply | 6,580,301 / 5,986,780 | |
+| FPU divide / sqrt | 906,960 / 781,580 | |
+
+The one benchmark measured both before and after is Wolfenstein 3-D's
+attract loop (`C:\wolf3d`, the exact build, `TIMEDEMO`, all four demos):
+**68.9 fps in play at 33 MHz, 93.2 at 66** -- 35% for twice the clock,
+because a clock-doubled 486 runs its core at 66 and its bus at 33, and a
+frame is mostly writes to video memory.  `REP STOSW` to B800 is the row
+that shows it: 12x the V30 where everything on the CPU is 25-40x.  So on
+this box a CPU-side saving buys less than it did at 33 -- `FARBLOBS`, 11%
+at 33, measured nothing at 66 (93.23 against 93.23).
+
+**Its plug's watts changed on 2026-10-08**: StevenC put a different
+(LCD) monitor on the 486, on the same plug, so the draw is lower than the
+87 W of the hang on 2026-10-04 implies.  Running DOS and polling, with it:
+**67.3 W**.  Read the 486's watts against that figure from now on, not
+against anything recorded before that date.
+
+**What a hang reads with that monitor, 2026-10-09**: Wolf3D multiplayer
+(`C:\wolf3d`, `MULTIPLAYER.md`) drew 64.3-65.9 W for hours, read every 5
+minutes; when the 486 hung 2 h 30 min into a four-hour test -- no packets,
+no answer to ARP -- it read 69.1 and 70.3 W, and 64.5 W after a power
+cycle.  **That is NOT a hang signature**: the same game running cleanly
+for four more hours the same evening read anywhere from **58.7 to
+76.7 W**.  The watts say the machine has power and nothing more; whether
+it is alive is a question for the network or a screen.  Why it hung is
+not known (`MULTIPLAYER.md` in `C:\wolf3d` has the watchdog built to
+answer that the next time).
+
 ## The runtime hooks INT 10h, and on a 386 with no 387 that kills the machine
 
 **Found 2026-09-19, on the second box: a Gateway 2000 386SX/25 with a PicoMEM
@@ -378,6 +429,42 @@ drives the card's EMS page registers itself; the probes are in its
   BIOS hands back its own flags.  A program that calls it and then waits
   on the BIOS clock hangs; this hung the V30 twice.  Wrap it in
   `PUSHF`/`POPF`.
+
+## On the PicoMEM 1, AdLib music slows the disk
+
+**2026-10-01, measured with Wolf3D's TIMEDEMO** (`C:\wolf3d`, V30NOTES,
+"Loading the game data").  The first level reads all 663 pages of
+`VSWAP.WL6` from the disk.  On the **486 with the PicoMEM 1** that took 200
+ticks with the game's music playing, **132 with `NOMUSIC` and 116 with
+`NOSOUND`** -- the music's 700 Hz AdLib service costs the load more than a
+third.  The same reads with nothing playing take it 90 ticks, and HIMEM's
+XMS moves are negligible (2 MB in 2-3 ticks).  The profile puts the time
+inside ROM -- the PicoMEM's disk emulation.  **On the V30 with the PicoMEM 2
+the music costs nothing** (118 ticks with it, 129 and 131 without: noise).
+
+So: **on a PicoMEM 1, anything that plays AdLib music while it reads the
+disk is slow, and it is the card, not the program.**  The card emulates
+both the OPL2 and the hard disk, and on the PicoMEM 1 the two get in each
+other's way; the PicoMEM 2 keeps up with both.  **And the card is on the
+newest PicoMEM 1 firmware** (`PM_W_11_16_25`, which carries the BIOS dated
+2025-11-02 that the card reports -- see `CLAUDE.md`), whose own release
+notes say "Adlib has almost no more cut during disk access": that is as
+good as the PicoMEM 1 gets, so this is the card's generation, not a
+missing update.  It cannot be the CPU: the 486 is the faster machine, so
+the music's own interrupt costs it less, not more.  A PicoMEM 2 in the 486
+would show the difference directly.
+
+The same firmware's notes add that its disk speedup ("FatFS Fast Seek")
+needs the **disk image unfragmented on the SD card** -- back the card up,
+format it and copy the images back.  Whether this SD card's images are
+fragmented has not been checked; it is the one thing on a PicoMEM 1 that
+could still make its disk faster.
+
+`CLAUDE.md` warns that the two boxes differ in CPU, card and firmware all
+at once, and that the card was once blamed for a fault that was the
+machine's distance from the router.  This one is pinned harder: the time
+is in the card's disk ROM, on one machine, and it comes and goes with the
+music alone.
 
 ## Interrupts off for more than ~27 ms loses clock ticks
 

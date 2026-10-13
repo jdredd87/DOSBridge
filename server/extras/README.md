@@ -14,6 +14,7 @@ DOS-readable `.TXT` explaining what it does and how to install it by hand.
 | `umbsc\` | **UMBSC**, an upper memory manager for PCs with no 386 memory manager: `USE!UMBS.SYS` rebuilt to take no conventional memory (224 bytes back), same answers, same blocks. Public domain |
 | `doskeysc\` | **DOSKEYSC**, a DOSKEY for MS-DOS 5 and later: everything MS-DOS 6.22's does, key for key, plus **TAB filename completion** (TAB, TAB again, SHIFT+TAB). Written from a study of 6.22's DOSKEY, none of its code, and since 1.1 its help and messages are its own words too. Public domain |
 | `xmssc\` | **XMSSC**, XMS 3.0 for PCs with no extended memory, served out of EMS -- any EMS 3.2 driver, and on a PicoMEM it drives the card's page registers itself: small moves 22% faster than the EMS driver's own move. `CONFIG.SYS` driver or TSR (`/U` unloads). Written from the specifications. Public domain |
+| `hwprobe\` | **HWPROBE**, four probes for a machine whose cards DOS cannot find: `NICSCAN` (an NE2000 at any ISA address, its MAC and the packet driver line), `PNPNIC` (wake a Plug-and-Play network card), `SNDPROBE` (a Sound Blaster, and a silent DMA + IRQ proof), `PCILIST` (the PCI bus and its IRQ routing). Three of them write to I/O ports -- read `HWPROBE.TXT` first |
 
 ## How extras ship
 

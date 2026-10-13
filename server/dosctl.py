@@ -491,7 +491,12 @@ def _watch_box(server, label, limit=420, back=30, assume_gone=False):
     else:
         sys.stderr.write("dosctl: %s -- waiting for the box to drop...\n"
                          % label)
+    # Back means a NEW poll: the age falls.  "Under `back` seconds" alone was
+    # true the moment the box was declared gone (an age of 16-29 is both
+    # over 15 and under 30), so a box that never came back was reported
+    # "back up after 16s" -- the 486 on 2026-10-04, which needed its plug.
     gone = assume_gone
+    prev = None
     t0 = time.time()
     while time.time() - t0 < limit:
         time.sleep(2)
@@ -501,9 +506,10 @@ def _watch_box(server, label, limit=420, back=30, assume_gone=False):
         if not gone and age > 15:
             gone = True
             sys.stderr.write("dosctl:   down, waiting for it to boot...\n")
-        elif gone and age < back:
+        elif gone and prev is not None and age < prev and age < back:
             sys.stderr.write("dosctl: back up after %.0fs\n" % (time.time() - t0))
             return True
+        prev = age
     sys.stderr.write("dosctl: box did not come back within %ds -- check its screen\n"
                      % limit)
     return False
