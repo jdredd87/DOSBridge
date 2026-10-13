@@ -1706,7 +1706,10 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 77 is public** (2026-09-28 evening: `extras/xmssc`, XMS 3.0
+* **Build 78 is public** (2026-10-13: F10 asks Claude from the DOS
+  machine -- `ASK`, `F10HIT`, `askwatch.py` -- and `extras/hwprobe`,
+  NICSCAN, PNPNIC, SNDPROBE and PCILIST).
+  **Build 77** (2026-09-28 evening: `extras/xmssc`, XMS 3.0
   served out of EMS, PicoMEM-direct -- 22% faster small moves than the EMS
   driver's own 57h, loaded from the V30's `CONFIG.SYS`; `dosdrv` fixed --
   no more `DEVLOAD /V`, which hangs the V30 by itself -- and
