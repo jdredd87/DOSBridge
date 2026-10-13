@@ -13,19 +13,23 @@ the result comes back as text: frame rates, notes played, what was detected.
 
 ## The demos
 
+Each name links to its source.  [`starter/demos`](../../server/starter/demos/.) has every demo and
+the units only they use; [`starter`](../../server/starter/demos/..) has the shared units (`About`,
+`Cpu`, `Tester`, `VGA`, `Prof`) and the build scripts.
+
 | | needs | what it is |
 |---|---|---|
-| **SCROLLER** | VGA, AdLib optional | A side-scrolling landscape with sprites and music in mode X: **70 fps on a V30**, one refresh per frame, no late frames. The background is painted once and scrolled by the CRTC start address. [SCROLLER.md](../../server/starter/demos/SCROLLER.md) tells the whole story |
-| **PARALLAX** | VGA, AdLib optional | **NEON DRIFT**: real per-row parallax. A CRTC line compare pins the bottom 64 rows so the perspective grid floor is repainted every frame, and every row scrolls at its own rate -- the geometry, not an effect. Two hovercars, an OPL2 soundtrack, and the 8087 used only if it wins a race against the integer path. [PARALLAX.md](../../server/starter/demos/PARALLAX.md) |
-| **RAYCAST** | VGA, AdLib optional | A Wolfenstein-style raycaster with textured walls in a generated 64x64 maze. Walks itself round, or is driven from the keyboard or from a script |
-| **FRACTAL** | VGA | The Mandelbrot set, with two inner loops: 16-bit fixed point, and the 8087 -- which buys precision, not speed, so `ZOOM` goes deep only with one fitted |
-| **BALLS** | VGA | Bouncing balls in mode 13h, colour or mono |
-| **SVGATEXT** | VGA; VESA for SVGA | Rotating text at 640x480x256 through VESA bank switching, or mode 13h if the card cannot |
-| **MATRIX** | any colour text | The falling green rain, in 80x25 text mode |
-| **AMOZART** | AdLib (OPL2) | Mozart's *Eine kleine Nachtmusik* in two voices on an FM chip, found by its own timers first |
-| **MOZART** | PC speaker | The same melody in one voice on the PC speaker, timed by the clock so it plays at the same tempo on any CPU |
-| **HELLO** | nothing | The smoke test: prints a line and runs two checks, one failing on purpose. Its exit code is the number that failed |
-| **PROFTEST** | nothing | Exercises the `Prof` profiling unit on work whose relative cost is already known |
+| [**SCROLLER**](../../server/starter/demos/scroller.pas) | VGA, AdLib optional | A side-scrolling landscape with sprites and music in mode X: **70 fps on a V30**, one refresh per frame, no late frames. The background is painted once and scrolled by the CRTC start address. [SCROLLER.md](../../server/starter/demos/SCROLLER.md) tells the whole story |
+| [**PARALLAX**](../../server/starter/demos/parallax.pas) | VGA, AdLib optional | **NEON DRIFT**: real per-row parallax. A CRTC line compare pins the bottom 64 rows so the perspective grid floor is repainted every frame, and every row scrolls at its own rate -- the geometry, not an effect. Two hovercars, an OPL2 soundtrack, and the 8087 used only if it wins a race against the integer path. [PARALLAX.md](../../server/starter/demos/PARALLAX.md) |
+| [**RAYCAST**](../../server/starter/demos/raycast.pas) | VGA, AdLib optional | A Wolfenstein-style raycaster with textured walls in a generated 64x64 maze. Walks itself round, or is driven from the keyboard or from a script |
+| [**FRACTAL**](../../server/starter/demos/fractal.pas) | VGA | The Mandelbrot set, with two inner loops: 16-bit fixed point, and the 8087 -- which buys precision, not speed, so `ZOOM` goes deep only with one fitted |
+| [**BALLS**](../../server/starter/demos/balls.pas) | VGA | Bouncing balls in mode 13h, colour or mono |
+| [**SVGATEXT**](../../server/starter/demos/svgatext.pas) | VGA; VESA for SVGA | Rotating text at 640x480x256 through VESA bank switching, or mode 13h if the card cannot |
+| [**MATRIX**](../../server/starter/demos/matrix.pas) | any colour text | The falling green rain, in 80x25 text mode |
+| [**AMOZART**](../../server/starter/demos/amozart.pas) | AdLib (OPL2) | Mozart's *Eine kleine Nachtmusik* in two voices on an FM chip, found by its own timers first |
+| [**MOZART**](../../server/starter/demos/mozart.pas) | PC speaker | The same melody in one voice on the PC speaker, timed by the clock so it plays at the same tempo on any CPU |
+| [**HELLO**](../../server/starter/demos/../hello.pas) | nothing | The smoke test: prints a line and runs two checks, one failing on purpose. Its exit code is the number that failed |
+| [**PROFTEST**](../../server/starter/demos/proftest.pas) | nothing | Exercises the `Prof` profiling unit on work whose relative cost is already known |
 
 ## Running them
 
