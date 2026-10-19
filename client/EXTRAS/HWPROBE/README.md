@@ -30,11 +30,12 @@ WHAT IT IS
     cards and changes nothing. A Creative card is never picked unless
     it is named with /C:.
 
-  SNDPROBE [/P:hhh] [/T] [/I:n]
+  SNDPROBE [/P:hhh] [/T] [/I:n] [/D:n]
     Is there a Sound Blaster? The DSP at 220h, 260h and 280h (NOT 240h,
     where a network card often lives), its version, the AdLib at 388h,
     and the BLASTER variable. /T proves the DMA and the IRQ with a
-    silent 256-byte transfer on DMA 1 and IRQ n (5 by default).
+    silent 256-byte transfer on DMA d (/D:0, 1 or 3; 1 by default)
+    and IRQ n (/I:n, 5 by default).
 
   PCILIST
     Every PCI device through the BIOS, read-only: vendor and device ID,

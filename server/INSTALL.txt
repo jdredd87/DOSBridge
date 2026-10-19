@@ -1,4 +1,4 @@
-DOS Bridge  build 81  (2026-10-13)
+DOS Bridge  build 82  (2026-10-19)
 
 dosbridge - Windows side
 ========================

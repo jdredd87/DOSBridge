@@ -1238,6 +1238,46 @@ arriving during it cost the same CPU -- and it overflowed the 8-slot ring
 16-slot ring stopped the drops and still took 11.4 s.  So the CRC stays at
 the `Move`, block by block, and the ring stays at 8.
 
+### Frames sent back to back through a PicoMEM's WiFi (2026-10-15)
+
+Found by the Wolf3D DOS server (`C:\wolf3d\mp\mpsrv.pas`, MULTIPLAYER.md
+"Phase 5" there), which sends one frame to each player every 57 ms, back
+to back: on **P3's PicoMEM 2** (BIOS 2026-09-27, the V30's SD card, so
+`PM2000` **0.5-SC5**), a frame that follows the last within about a
+millisecond is **lost or garbled** -- three fake players on one PC, and the
+one served second got ~50 of 800 packets while the third got its copies.
+The driver refused nothing and a ring of eight transmit buffers changed
+nothing; a 1 ms pause after each frame cured it completely.
+
+What it means here: a PC's stack drops a garbled frame for its UDP
+checksum, so to the bridge it is **a lost frame, never a wrong one**.
+`UPUT`'s windowed uploads (eight blocks back to back) on a PicoMEM may
+therefore lose blocks to this and resend them, at a cost in speed only --
+every transfer is CRC-checked end to end.  A stack that does not check
+UDP checksums (Wolf3D's own did not) takes the garbage as data.
+
+**Answered 2026-10-18: it is the card, not SC5.**  On P3 (PicoMEM 2, BIOS
+2026-09-27), Wolf3D's MPSRV with `--txgap 0` serving three fake players on
+the PC (`mp/mpfake.py`), each phase run twice:
+
+| driver | FAKE1 | FAKE2 (served 2nd) | FAKE3 |
+|---|---|---|---|
+| SC5 (`C:\DRIVERS\PM2000.COM`, handler `...:03D0`) | 1498, 1490 | **45, 43** | 2066, 2034 |
+| the original (`C:\PMNET\ORIG.COM`, `...:03CE`), swapped in live | 1492, 1496 | **45, 50** | 1683, 1670 |
+
+(STEPS packets received of the server's 1,500 steps.)  The frame sent
+straight after another is lost the same way on both drivers, so SC5 stays
+and the 1 ms pause every server now makes (`--txgap 1000`) is the cure.
+The swap was one job -- `PM2000.COM -u 0x60`, `ORIG.COM 0x60`, the test,
+`ORIG.COM -u 0x60`, `PM2000.COM 0x60` -- with nothing on disk changed.
+
+Once, in the first original-driver run, one fake took **wrong steps** from
+step 1150 on (its checksums differed from the others'), though MPSRV sends
+a correct UDP checksum and Windows checks it: a corruption that keeps the
+ones'-complement sum -- two 16-bit words exchanged, say -- would pass.  Not
+seen in the other three runs, either driver.  The game's own SYNC caught it
+at once, which is what SYNC is for.
+
 ## The original investigation: large transfers are NOT ARP
 
 Kept as history: this is how the large-transfer problem looked while it was

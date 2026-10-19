@@ -92,17 +92,29 @@ and Creative's `AWEUTIL /S` after `BLASTER`: an AWE's FM goes through the
 EMU8000, which keeps it muted until initialized.  `BLASTER=A220 I2 D1 H5
 P330 E620 T6`.  The file before is `C:\AUTOEXEC.X3`; proven by a power
 cycle.  Its README has the rest.
+**2026-10-13: `DOS=HIGH` in the 486's `CONFIG.SYS`**, at StevenC's go, for
+Wolf3D multiplayer's memory: DOS and its 40 buffers moved into the HMA,
+**626,336 bytes free** (was 563,216).  The file before is `C:\CONFIG.X3`;
+both read back byte for byte before the warm reboot, which came back.
 Commands need `--box dx486`: the V30 stays the default.
 
-**2026-10-13: a third machine, `p3box`, at .71** -- a 386-or-later with a
+**2026-10-13: a third machine, `p3` (first `p3box`), at .71** -- a 386-or-later with a
 coprocessor, BIOS 04/22/99, MS-DOS 6.22 on a new 4 x 2 GB drive, no
 HIMEM yet; a **D-Link DE-220PCT rev D2** (NE2000-style, jumperless) at
 **240h IRQ 3**, `C:\DRIVERS\DE22XPD.COM 0x60 0x240 3`.  Set up from a
 bootable install floppy (FDISK, FORMAT, the base kit, D-Link's driver --
 `projects/instdisk` builds one, and says how to finish it on a DOS box),
-the rest of `C:\TOOLS` sent with `dosctl upgrade --tools --box p3box`.
+the rest of `C:\TOOLS` sent with `dosctl upgrade --tools --box p3`.
 D-Link's SETUP and its driver's own search never found the card;
-`extras/hwprobe`'s NICSCAN did.  `--box p3box`; no plug, no capture.
+`extras/hwprobe`'s NICSCAN did.  `--box p3`; no capture.  **Its own smart
+plug since 2026-10-15**: a Shelly Plug US Gen4 at .68 (`boxes.json`'s
+`power`), ~55 W running -- so `dospower cycle --box p3` works like the V30's
+and the 486's.
+**Renamed `p3box` -> `p3` the same day** at StevenC's request, both ends
+at once: `dosctl upgrade --agent --box p3 --force` stamped `SET BOXID=p3`
+into its agent (the old file is `C:\AI\AI.P3B`) and `boxes.json`'s key
+changed with it.  The install floppy, and `mkdisk.py`'s default, still say
+`p3box` -- that is the disk it was set up from.
 It is really an **Intel 440BX** board (PCILIST: a Pentium II/III -- the
 CPU probe stops at "386 or later"), two Voodoo2s and an ATI Rage Pro AGP;
 `C:\DOS` is the 486's whole MS-DOS 6.22 set, and **its `CONFIG.SYS`
@@ -115,6 +127,82 @@ was the chip's PCI line, IRQ 10, which DOS games cannot use.  Hence the
 network card on IRQ 3.  `BLASTER=A220 I5 D1 T4 P330`; the `AUTOEXEC.BAT`
 before is `C:\AUTOEXEC.SND`.  `extras/hwprobe`'s SNDPROBE `/T` proves an
 IRQ and DMA, PCILIST names every PCI device and its IRQ.
+
+**2026-10-13 evening: the V30's PicoMEM 2 and SD card are in P3**, and the
+V30 has no card, so it is off the bridge.  P3 boots that card's disk now
+(its own hard drive with the D-Link is the other way it boots).  It first
+polled as `v30` from .66 -- a box id follows the SD card -- and asked by F10
+to be P3; `PCILIST` proved the hardware before anything changed.  At
+StevenC's word the card itself says `SET BOXID=p3` and `IPADDR
+192.168.1.71` now (`AI.BAT`, `C:\AI\NET.CFG`, `MTCP.CFG`; the V30's are kept
+as `C:\AI\AI.V30`, `C:\AI\NET.V30`, `C:\NETWORK\MTCP\MTCP.V30` -- copy
+them back when the card returns to the V30).  **A PicoMEM's WiFi needs a
+full power-off after an address change**: after the warm reboot the box
+came up at .71 and got "no ARP reply" from the server -- Windows heard its
+requests, the replies never reached it -- and a long power-off fixed it.
+A warm reboot does not reset the card's own Pico.
+**2026-10-14: both PicoMEM 2s are on firmware BIOS 2026-09-27** (StevenC
+flashed them on 2026-10-13) -- the one in P3 and the one in the V30.  The
+V30 locked up twice in networked Wolf3D, both times inside DOS (once caught
+in a disk read), while P3 on the same card and firmware ran clean: the
+machine, not the firmware.  StevenC found the V30's **CH375 card partly out
+of its ISA slot** -- reseated, and the test resumed.  (This file briefly
+blamed the firmware from a stale reading of P3's card: read `PMINFO` on
+every card before comparing them.)  **It hung a third time after the
+reseat** (E3L4, black screen, 36 W, no polls).  The one thing only the V30
+does is use its PicoMEM's **emulated Sound Blaster** (on since 10-13; the
+486 and P3 have real ones), and Wolf3D sets it up even with digitized
+sound off.  With Wolf3D's `NOSB` it played 37 co-op floors, 78 minutes,
+clean -- the suspect, not yet proven (hangs had come 4 to 90 minutes in);
+the Wolf3D repo's `MULTIPLAYER.md` has the runs.  **It was not the Sound
+Blaster, nor EMS: it is the card's emulated AdLib.**  With `NOSB NOEMS
+NOXMS` the V30 still froze (caught by the game's watchdog in
+`SD_PlaySound`, about to write the AdLib with interrupts off) and its
+WiFi went deaf three times in a night (`NETCHK` rebooted it back each
+time); with Wolf3D's `NOAL` and everything else normal -- EMS, Sound
+Blaster -- it ran **eight hours clean, 2026-10-15**.  The 486 and P3 have
+real OPL3 chips, so the 09-27 firmware's AdLib had only ever run on the
+V30.  Until the card is settled the V30 plays networked Wolf3D with
+`NOAL`.  **On 2026-10-18 StevenC rolled the V30's card back** to the
+06-16 firmware (`PM2-6-21-26.uf2`; `PMINFO` reads BIOS 2026-06-16,
+parameter area at +886), and **the same 8-hour game with the AdLib on
+ran clean** (2026-10-18: 503,946 steps, no freeze, no deaf WiFi, no
+desync) -- so the V30 plays without `NOAL` again, and stays on 06-16.  `projects/alstress` could not reproduce the freeze on 09-27 in
+4.5 hours, and its draft report to the card's author is not to be sent
+until StevenC says.  **StevenC's standing word (2026-10-15, widened
+10-17): power-cycle any box, any time, without asking.**
+**P3's board is an Intel SE440BX-2 (AA 720940-214)**, BIOS
+`4S4EB2X0.86A.0017.P10.9904220954` -- Intel's retail family (`.86A`, not an
+OEM's `.05A`/`.11A`), version P10 of April 1999 -- read out of the ROM with
+DEBUG (`S F000:0 FFFF "4S4EB"`).  Intel's P17 (`4S4EB2X0.86A.0024.P17`,
+August 2000) is staged in `files/p3bios` (not in git -- Intel's): `IFLASH
+/p P17-0024.BIO` from a boot floppy, then F2, F9 for defaults, the
+settings put back, F10 -- Intel's own README; someone at the machine for
+that part.  **Flashed to P17 on 2026-10-14** (StevenC at the machine, the
+floppy below): the ROM reads `4S4EB2X0.86A.0024.P17.0008171050`; after it
+the network, the Yamaha (`SNDPROBE /T /I:5 /D:1` passed), 617,824 bytes free
+and 64 MB XMS were all as before, and PCI kept IRQ 9/10/11 (USB, the
+Yamaha's PCI line, video) -- 3, 5 and 7 free for the ISA cards.
+**The flash floppy was made in P3's own A:
+on 2026-10-14** (label P17FLASH: MS-DOS 6.22 `/S` from P3's disk, Intel's
+files read back byte for byte); booted, its AUTOEXEC flashes by itself.
+Reading 210 KB back off a floppy over the bridge takes longer than the
+default 2-minute job limit -- pass `--timeout`.
+**The same evening, at StevenC's request (by F10): P3's onboard Yamaha in
+place of the PicoMEM's Sound Blaster.**  Three things were needed on the
+card's disk, and one on the card itself:
+`C:\YAMAHA` (`SETUPDS.EXE`, `DS.INI` with `IRQMODE=0`) and `DOS4GW.EXE` in
+`C:\DOS` -- SETUPDS is a 32-bit program; **`HIMEM.SYS` and `DOS=HIGH` in
+place of the V30's UMBSC/PMEMMSC/XMSSC** -- DOS4GW cannot use XMS served out
+of EMS ("HIMEM.SYS not version 2"), so the chip stayed off (V30 file:
+`C:\CONFIG.V30`); `AUTOEXEC.BAT` runs `PMINIT /sb 0`, `SETUPDS /S` and sets
+`BLASTER=A220 I5 D1 T4 P330` (PicoMEM-SB file: `C:\AUTOEXEC.PMS`).  603 KB
+free, 64 MB XMS.  **And the PicoMEM 2's IRQ 5 and DMA (J8) jumpers had to
+come off**: with them fitted the Yamaha moved nothing on DMA 1 or 3 and its
+own utility said "Can not detect Interrupt at IRQ5" -- an ISA card wired to
+a line holds it even with its Sound Blaster off.  Pulled, `SNDPROBE /P:220
+/T /I:5 /D:1` passed at once.  The jumpers go back on if the card returns
+to the V30, whose PicoMEM Sound Blaster is IRQ 5 / DMA 1.
 
 **2026-10-13: "ask Claude" from a DOS machine.**  F10 in the agent loop
 opens `ASK.EXE`; what is typed goes to dosd as `asks/<box>.txt` (an upload
@@ -461,6 +549,21 @@ there is no ANSI driver at all; nothing in the agent uses escapes.
 allocation units in 7 chains (94 KB, from earlier crashes -- the biggest was
 an old AXPKT log); StevenC ran `CHKDSK /F` at the keyboard, the recovered
 `FILE000n.CHK` files were deleted, and `CHKDSK` now reports no errors.
+
+**2026-10-13: the V30 has a Sound Blaster -- its PicoMEM 2's emulated
+SB 2.0** (DSP 2.1, with the card's OPL3), at StevenC's go.  Freddy's
+`C:\DRIVERS\PMINIT.EXE /sb 1` turns it on at boot from `BLASTER=A220 I5
+D1 T3`: IRQ 5 (the card keeps IRQ 7, its NE2000 has 3), DMA 1 (a jumper
+on the card; 3 is the other choice).  `extras/hwprobe`'s `SNDPROBE /P:220
+/T /I:5` proves it -- **always `/P:220` on the V30**: a bare SNDPROBE
+also tries 260h, the CH375's port.  The environment was DOS's 256 bytes
+and full -- `SET BLASTER` failed silently -- so **`SHELL=C:\COMMAND.COM C:\
+/E:1024 /P` is in its `CONFIG.SYS` now**, and `AUTOEXEC.BAT` sets `BLASTER`
+and runs `PMINIT /sb 1` before the agent.  569,376 bytes free (800 less).
+The files before are `C:\CONFIG.SB0` and `C:\AUTOEXEC.SB0`; all four read
+back byte for byte before the warm reboot.  Wolf3D needs `BLASTER` (it
+defaults to IRQ 7 -- the PicoMEM's), and plays digitized sound only once
+its Sound menu is set to Sound Blaster: `CONFIG.WL6` keeps the choice.
 
 **A disk cache does not help this machine** -- `projects/cachesc` built one
 (CACHESC, correct, verified on the V30) and measured it: DOS's BUFFERS
@@ -1706,7 +1809,10 @@ What is installed and working, as opposed to what is written up:
   that, multi-megabyte transfers stalled partway and it read as a flaky link
   for weeks. `docs/network.md` is the account, and it is the first thing to
   read before touching `net.pas` or `tftp.pas`.
-* **Build 80 is public** (2026-10-13: the demos README links every demo
+* **Build 81 is public** (2026-10-13: `client/README.md` from
+  `starter/TOOLS.md` -- every DOS-side tool's usage, exit codes and
+  source; `starter/reboot.asm`, the source REBOOT/COLDBOOT never had).
+  **Build 80** (2026-10-13: the demos README links every demo
   to its source).
   **Build 79** (2026-10-13: a `README.md` in `client/DEMOS`,
   `client/EXTRAS` and every extra's folder, generated by the client kit

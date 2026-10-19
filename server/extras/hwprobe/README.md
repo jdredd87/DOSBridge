@@ -63,15 +63,22 @@ so it does answer isolation, and why the first run did not is not known.
 ## SNDPROBE -- is there a Sound Blaster, and do its IRQ and DMA work?
 
 ```
-SNDPROBE [/P:hhh] [/T] [/I:n]
+SNDPROBE [/P:hhh] [/T] [/I:n] [/D:n]
 ```
 
 The DSP reset at 220h, 260h and 280h -- **not 240h**, where p3box's network
 card lives (SBPROBE, which scans 210h-280h, would have written into it) --
 and its version; the AdLib timer test at 388h; the `BLASTER` variable.
-`/T` is PNPSB's proof: a silent 256-byte 8-bit DMA transfer on DMA 1 that
-must end in the card's interrupt on IRQ `/I:n` (5 by default), and the DMA
-count left says which half failed (FFFFh: the DMA moved everything).
+`/T` is PNPSB's proof: a silent 256-byte 8-bit DMA transfer on DMA `/D:n`
+(0, 1 or 3; 1 by default) that must end in the card's interrupt on IRQ
+`/I:n` (5 by default), and the DMA count left says which half failed
+(FFFFh: the DMA moved everything; 00FFh: nothing moved).
+
+**Another card wired to the same IRQ or DMA line stops the transfer cold.**
+On 2026-10-13 p3box's Yamaha moved nothing on DMA 1 or 3 and Yamaha's own
+utility said "Can not detect Interrupt at IRQ5" -- a PicoMEM 2 had gone
+into the machine with its IRQ 5 and DMA jumpers fitted.  With those pulled,
+`/T /I:5 /D:1` passed at once.
 
 p3box's onboard **Yamaha YMF740C** (PCI): nothing answered at all until
 Yamaha's `SETUPDS /S`; then DSP 3.1 at 220h and the OPL at 388h -- but `/T`

@@ -2,7 +2,7 @@
   touching the network card.  Written by StevenC and Claude (Anthropic),
   2026-10-13, for p3box's onboard sound.
 
-    SNDPROBE [/P:hhh]
+    SNDPROBE [/P:hhh] [/T] [/I:n] [/D:n]
 
   The Sound Blaster DSP's reset (base+6: 1, wait, 0; then AAh at base+Ah)
   at 220h, 260h and 280h -- NOT 240h, p3box's D-Link card -- or only at
@@ -93,6 +93,7 @@ end;
   DMA a game's digitized sound needs.  The handler counts and acknowledges }
 var
   TestIrq: Integer = 5;
+  TestDma: Integer = 1;                 { /D:n -- 0, 1 or 3 (2026-10-13) }
   IrqCount: Word;
   DspBase: Word;
   OldVec: FarPointer;
@@ -114,7 +115,16 @@ var
   Page, Off, Len: Word;
   Mask, Mask2, Vec: Byte;
   P: PByte;
+  AdrP, CntP, PagP: Word;
 begin
+  AdrP := TestDma * 2;                  { the 8237's address and count ports }
+  CntP := AdrP + 1;
+  case TestDma of
+    0: PagP := $87;
+    3: PagP := $82;
+  else
+    PagP := $83;
+  end;
   DspBase := Base;
   if TestIrq >= 8 then Vec := $70 + TestIrq - 8 else Vec := 8 + TestIrq;
   P := @DmaBuf[0];
@@ -136,22 +146,22 @@ begin
   end
   else
     Port[$21] := Mask and not (1 shl TestIrq);
-  Port[$0A] := $05;                     { DMA 1: mask, flip-flop, mode, address, page, count }
+  Port[$0A] := $04 or TestDma;          { mask, flip-flop, mode, address, page, count }
   Port[$0C] := 0;
-  Port[$0B] := $49;
-  Port[$02] := Lo(Off); Port[$02] := Hi(Off);
-  Port[$83] := Page;
-  Port[$03] := Lo(Len); Port[$03] := Hi(Len);
-  Port[$0A] := $01;
+  Port[$0B] := $48 or TestDma;
+  Port[AdrP] := Lo(Off); Port[AdrP] := Hi(Off);
+  Port[PagP] := Page;
+  Port[CntP] := Lo(Len); Port[CntP] := Hi(Len);
+  Port[$0A] := TestDma;
   DspWrite(Base, $D3);                  { speaker off: it is silence anyway }
   DspWrite(Base, $40); DspWrite(Base, 256 - 1000000 div 22050);
   DspWrite(Base, $14); DspWrite(Base, Lo(Len)); DspWrite(Base, Hi(Len));
   T := MemL[$40:$6C];
   while (IrqCount = 0) and (MemL[$40:$6C] - T < 10) do ;
   Port[$0C] := 0;
-  Left := Port[$03];
-  Left := Left or (Port[$03] shl 8);
-  Port[$0A] := $05;
+  Left := Port[CntP];
+  Left := Left or (Port[CntP] shl 8);
+  Port[$0A] := $04 or TestDma;
   Port[$21] := Mask;
   Port[$A1] := Mask2;
   SetIntVec(Vec, OldVec);
@@ -173,7 +183,8 @@ begin
     for N := 1 to Length(S) do S[N] := UpCase(S[N]);
     if Copy(S, 1, 3) = '/P:' then Val('$' + Copy(S, 4, 4), Only, Code)
     else if S = '/T' then DoTest := True
-    else if Copy(S, 1, 3) = '/I:' then Val(Copy(S, 4, 2), TestIrq, Code);
+    else if Copy(S, 1, 3) = '/I:' then Val(Copy(S, 4, 2), TestIrq, Code)
+    else if Copy(S, 1, 3) = '/D:' then Val(Copy(S, 4, 1), TestDma, Code);
   end;
   Result := 0;
   S := GetEnv('BLASTER');
@@ -194,9 +205,9 @@ begin
       Result := Result or 1;
       if DoTest then
         if TestTransfer(Bases[I], Left) then
-          WriteLn('  IRQ ', TestIrq, ' and DMA 1 proven: a silent transfer ended in the interrupt')
+          WriteLn('  IRQ ', TestIrq, ' and DMA ', TestDma, ' proven: a silent transfer ended in the interrupt')
         else
-          WriteLn('  NO interrupt on IRQ ', TestIrq, '; DMA 1 count left ', Hex(Left, 4),
+          WriteLn('  NO interrupt on IRQ ', TestIrq, '; DMA ', TestDma, ' count left ', Hex(Left, 4),
                   'h (FFFFh: all 256 moved -- the DMA works; 00FFh: none moved)');
     end
     else
